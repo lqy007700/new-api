@@ -611,7 +611,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           <div className='flex w-fit flex-col gap-0.5'>
             <ModelBadge
               modelName={modelInfo.name}
-              actualModel={modelInfo.actualModel}
+              // Keep the upstream model mapping visible to administrators,
+              // but do not expose routing details in the user-facing logs.
+              actualModel={isAdmin ? modelInfo.actualModel : undefined}
             />
           </div>
         )
