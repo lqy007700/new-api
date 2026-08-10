@@ -100,6 +100,33 @@ func TestSearchRedemptionsFiltersAndPaginates(t *testing.T) {
 	}
 }
 
+func TestGetUserRedemptionHistoryFiltersAndHidesKey(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Redemption{}))
+	require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&Redemption{}).Error)
+	t.Cleanup(func() {
+		require.NoError(t, DB.Session(&gorm.Session{AllowGlobalUpdate: true}).Unscoped().Delete(&Redemption{}).Error)
+	})
+
+	userID := 42
+	now := common.GetTimestamp()
+	require.NoError(t, DB.Create(&[]Redemption{
+		{Id: 11, Name: "first", Key: "20000000000000000000000000000001", Quota: 100, Status: common.RedemptionCodeStatusUsed, UsedUserId: userID, RedeemedTime: now - 20},
+		{Id: 12, Name: "second", Key: "20000000000000000000000000000002", Quota: 200, Status: common.RedemptionCodeStatusUsed, UsedUserId: userID, RedeemedTime: now - 10},
+		{Id: 13, Name: "other-user", Key: "20000000000000000000000000000003", Quota: 300, Status: common.RedemptionCodeStatusUsed, UsedUserId: userID + 1, RedeemedTime: now},
+		{Id: 14, Name: "unused", Key: "20000000000000000000000000000004", Quota: 400, Status: common.RedemptionCodeStatusEnabled, UsedUserId: userID, RedeemedTime: now},
+	}).Error)
+
+	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
+	items, total, err := GetUserRedemptionHistory(userID, pageInfo)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, items, 2)
+	assert.Equal(t, 12, items[0].Id)
+	assert.Equal(t, "second", items[0].Name)
+	assert.Equal(t, 200, items[0].Quota)
+	assert.Equal(t, now-10, items[0].RedeemedTime)
+}
+
 func setupRedeemFixture(t *testing.T, quota int) (userId int, key string) {
 	t.Helper()
 	require.NoError(t, DB.AutoMigrate(&Redemption{}))

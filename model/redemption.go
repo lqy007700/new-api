@@ -21,9 +21,53 @@ type Redemption struct {
 	CreatedTime  int64          `json:"created_time" gorm:"bigint"`
 	RedeemedTime int64          `json:"redeemed_time" gorm:"bigint"`
 	Count        int            `json:"count" gorm:"-:all"` // only for api request
-	UsedUserId   int            `json:"used_user_id"`
+	UsedUserId   int            `json:"used_user_id" gorm:"index"`
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
 	ExpiredTime  int64          `json:"expired_time" gorm:"bigint"` // 过期时间，0 表示不过期
+}
+
+// RedemptionHistoryItem is the safe, user-facing view of a redeemed code.
+// Keep the original key out of this response because it is not needed to
+// display history and must not be exposed to the browser.
+type RedemptionHistoryItem struct {
+	Id           int    `json:"id"`
+	Name         string `json:"name"`
+	Quota        int    `json:"quota"`
+	RedeemedTime int64  `json:"redeemed_time"`
+}
+
+func GetUserRedemptionHistory(userId int, pageInfo *common.PageInfo) (items []*RedemptionHistoryItem, total int64, err error) {
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, 0, tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	query := tx.Model(&Redemption{}).
+		Where("used_user_id = ? AND status = ?", userId, common.RedemptionCodeStatusUsed)
+	if err = query.Count(&total).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	err = query.Select("id", "name", "quota", "redeemed_time").
+		Order("redeemed_time desc, id desc").
+		Limit(pageInfo.GetPageSize()).
+		Offset(pageInfo.GetStartIdx()).
+		Find(&items).Error
+	if err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func GetAllRedemptions(startIdx int, num int) (redemptions []*Redemption, total int64, err error) {

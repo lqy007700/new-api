@@ -42,6 +42,19 @@ func SearchRedemptions(c *gin.Context) {
 	return
 }
 
+func GetUserRedemptionHistory(c *gin.Context) {
+	pageInfo := common.GetPageQuery(c)
+	items, total, err := model.GetUserRedemptionHistory(c.GetInt("id"), pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(items)
+	common.ApiSuccess(c, pageInfo)
+}
+
 func GetRedemption(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

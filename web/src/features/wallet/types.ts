@@ -282,6 +282,28 @@ export interface BillingHistoryResponse {
 }
 
 /**
+ * User redemption history record
+ */
+export interface RedemptionHistoryRecord {
+  /** Redemption record ID */
+  id: number
+  /** Redemption batch/name */
+  name: string
+  /** Quota credited by the redemption */
+  quota: number
+  /** Redemption timestamp */
+  redeemed_time: number
+}
+
+/**
+ * Redemption history response
+ */
+export interface RedemptionHistoryResponse {
+  items: RedemptionHistoryRecord[]
+  total: number
+}
+
+/**
  * Complete order request (admin only)
  */
 export interface CompleteOrderRequest {
