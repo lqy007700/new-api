@@ -52,9 +52,9 @@ func TestNewAPIErrorClientResponseSanitization(t *testing.T) {
 			wantText:   ClientErrorMessageServer,
 		},
 		{
-			name:       "upstream 503 keeps a 5xx status",
+			name:       "upstream 503 is normalized to fixed 500",
 			statusCode: http.StatusServiceUnavailable,
-			wantStatus: http.StatusServiceUnavailable,
+			wantStatus: http.StatusInternalServerError,
 			wantType:   "server_error",
 			wantCode:   "server_error",
 			wantText:   ClientErrorMessageServer,

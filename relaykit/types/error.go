@@ -246,9 +246,10 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 	return result
 }
 
-// ClientStatusCode returns the only status-code families exposed by relay
-// endpoints. Detailed upstream status codes remain available to server logs
-// and channel diagnostics, but are never sent to API clients.
+// ClientStatusCode returns the only status codes exposed by relay endpoints.
+// Detailed upstream status codes remain available to server logs and channel
+// diagnostics, but are never sent to API clients. All non-public failures use
+// a fixed 500 instead of forwarding an upstream 5xx variant.
 func (e *NewAPIError) ClientStatusCode() int {
 	if e == nil {
 		return http.StatusInternalServerError
@@ -267,9 +268,6 @@ func (e *NewAPIError) ClientStatusCode() int {
 	case http.StatusTooManyRequests:
 		return http.StatusTooManyRequests
 	default:
-		if e.StatusCode >= 500 && e.StatusCode <= 599 {
-			return e.StatusCode
-		}
 		return http.StatusInternalServerError
 	}
 }
