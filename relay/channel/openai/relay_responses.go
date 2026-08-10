@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -84,6 +85,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var responseTextBuilder strings.Builder
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 	imageCommitted := false
+	requestID := c.GetString(common.RequestIdKey)
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -94,6 +96,26 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		if streamResponse.Type == "response.error" || streamResponse.Type == "response.failed" {
+			// Do not forward the provider's response object: it can contain the
+			// upstream model name, provider diagnostics, or internal routing data.
+			// Keep the Responses event shape but replace its payload with the
+			// same sanitized error contract used for non-stream requests.
+			streamErr := types.NewError(
+				errors.New("upstream responses stream error"),
+				types.ErrorCodeBadResponse,
+			)
+			streamResponse.Response = &dto.OpenAIResponsesResponse{
+				Error: streamErr.ToClientOpenAIError(requestID),
+			}
+			sanitized, marshalErr := common.Marshal(streamResponse)
+			if marshalErr != nil {
+				logger.LogError(c, "failed to marshal sanitized responses stream error: "+marshalErr.Error())
+				return
+			}
+			data = string(sanitized)
+		}
+
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed", "response.done":

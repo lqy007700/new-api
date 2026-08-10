@@ -98,6 +98,13 @@ type NewAPIError struct {
 	Metadata       json.RawMessage
 }
 
+const (
+	ClientErrorMessageUnauthorized = "Token 无效或无权限：核对 Token，以及 Token 的可用模型和分组设置。"
+	ClientErrorMessageQuota        = "余额不足：前往控制台“钱包”充值后重试。"
+	ClientErrorMessageRateLimit    = "请求频率超过限制：降低请求频率并采用退避策略重试；持续出现时请联系我们。"
+	ClientErrorMessageServer       = "服务或上游临时异常：携带响应中的请求 ID 联系客服，以便快速定位。"
+)
+
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
 func (e *NewAPIError) Unwrap() error {
 	if e == nil {
@@ -237,6 +244,94 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 		result.Message = string(e.errorType)
 	}
 	return result
+}
+
+// ClientStatusCode returns the only status-code families exposed by relay
+// endpoints. Detailed upstream status codes remain available to server logs
+// and channel diagnostics, but are never sent to API clients.
+func (e *NewAPIError) ClientStatusCode() int {
+	if e == nil {
+		return http.StatusInternalServerError
+	}
+
+	switch e.errorCode {
+	case ErrorCodeInsufficientUserQuota, ErrorCodePreConsumeTokenQuotaFailed:
+		return http.StatusPaymentRequired
+	}
+
+	switch e.StatusCode {
+	case http.StatusUnauthorized:
+		return http.StatusUnauthorized
+	case http.StatusPaymentRequired:
+		return http.StatusPaymentRequired
+	case http.StatusTooManyRequests:
+		return http.StatusTooManyRequests
+	default:
+		if e.StatusCode >= 500 && e.StatusCode <= 599 {
+			return e.StatusCode
+		}
+		return http.StatusInternalServerError
+	}
+}
+
+func clientErrorMessage(statusCode int) string {
+	switch statusCode {
+	case http.StatusUnauthorized:
+		return ClientErrorMessageUnauthorized
+	case http.StatusPaymentRequired:
+		return ClientErrorMessageQuota
+	case http.StatusTooManyRequests:
+		return ClientErrorMessageRateLimit
+	default:
+		return ClientErrorMessageServer
+	}
+}
+
+func (e *NewAPIError) ClientMessage(requestID string) string {
+	message := clientErrorMessage(e.ClientStatusCode())
+	if requestID == "" {
+		return message
+	}
+	return fmt.Sprintf("%s (request id: %s)", message, requestID)
+}
+
+// ToClientOpenAIError creates a sanitized OpenAI-compatible error response.
+// It intentionally does not reuse ToOpenAIError, which is also used by
+// internal billing and diagnostics code that needs the original message.
+func (e *NewAPIError) ToClientOpenAIError(requestID string) OpenAIError {
+	statusCode := e.ClientStatusCode()
+	typeName, code := "server_error", "server_error"
+	switch statusCode {
+	case http.StatusUnauthorized:
+		typeName, code = "authentication_error", "invalid_api_key"
+	case http.StatusPaymentRequired:
+		typeName, code = "insufficient_quota", "insufficient_quota"
+	case http.StatusTooManyRequests:
+		typeName, code = "rate_limit_error", "rate_limit_exceeded"
+	}
+	return OpenAIError{
+		Message: e.ClientMessage(requestID),
+		Type:    typeName,
+		Code:    code,
+	}
+}
+
+// ToClientClaudeError creates a sanitized Claude-compatible error response.
+func (e *NewAPIError) ToClientClaudeError(requestID string) ClaudeError {
+	statusCode := e.ClientStatusCode()
+	typeName := "api_error"
+	switch statusCode {
+	case http.StatusUnauthorized:
+		typeName = "authentication_error"
+	case http.StatusPaymentRequired:
+		typeName = "billing_error"
+	case http.StatusTooManyRequests:
+		typeName = "rate_limit_error"
+	}
+	return ClaudeError{
+		Type:    typeName,
+		Message: e.ClientMessage(requestID),
+	}
 }
 
 type NewAPIErrorOptions func(*NewAPIError)

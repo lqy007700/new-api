@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -17,8 +18,8 @@ func Playground(c *gin.Context) {
 
 	defer func() {
 		if newAPIError != nil {
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"error": newAPIError.ToOpenAIError(),
+			c.JSON(newAPIError.ClientStatusCode(), gin.H{
+				"error": newAPIError.ToClientOpenAIError(c.GetString(common.RequestIdKey)),
 			})
 		}
 	}()

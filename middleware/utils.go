@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -15,13 +17,35 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		codeStr = string(code[0])
 	}
 	userId := c.GetInt("id")
-	c.JSON(statusCode, gin.H{
-		"error": gin.H{
-			"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),
-			"type":    "new_api_error",
-			"code":    codeStr,
-		},
-	})
+	isRelayClientPath := strings.HasPrefix(c.Request.URL.Path, "/v1") || strings.HasPrefix(c.Request.URL.Path, "/v1beta")
+	if isRelayClientPath {
+		// Relay clients receive only the documented public status families.
+		// Permission failures are represented as 401 because the public
+		// contract describes both invalid and unauthorized tokens together.
+		if statusCode == http.StatusForbidden {
+			statusCode = http.StatusUnauthorized
+		} else if statusCode != http.StatusUnauthorized && statusCode != http.StatusPaymentRequired &&
+			statusCode != http.StatusTooManyRequests && (statusCode < 500 || statusCode > 599) {
+			statusCode = http.StatusInternalServerError
+		}
+	}
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusPaymentRequired ||
+		statusCode == http.StatusTooManyRequests || statusCode >= 500 {
+		internalCode := types.ErrorCodeBadResponse
+		if len(code) > 0 {
+			internalCode = code[0]
+		}
+		err := types.NewErrorWithStatusCode(fmt.Errorf("%s", message), internalCode, statusCode)
+		c.JSON(err.ClientStatusCode(), gin.H{"error": err.ToClientOpenAIError(c.GetString(common.RequestIdKey))})
+	} else {
+		c.JSON(statusCode, gin.H{
+			"error": gin.H{
+				"message": common.MessageWithRequestId(message, c.GetString(common.RequestIdKey)),
+				"type":    "new_api_error",
+				"code":    codeStr,
+			},
+		})
+	}
 	c.Abort()
 	logger.LogError(c.Request.Context(), fmt.Sprintf("user %d | %s", userId, message))
 }
