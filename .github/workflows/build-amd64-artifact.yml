@@ -3,7 +3,7 @@ name: Build New API amd64 image artifact
 on:
   push:
     branches:
-      - x-x-custom
+      - main
   workflow_dispatch:
 
 permissions:
