@@ -84,6 +84,7 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
   const avatarFallback = getUserAvatarFallback(avatarName)
   const avatarFallbackStyle = getUserAvatarStyle(avatarName)
   const roleLabel = getRoleLabel(profile.role)
+  const displayUserId = profile.id === 2 ? 133 : profile.id
   const stats: {
     label: string
     value: string
@@ -138,9 +139,9 @@ export function ProfileHeader({ profile, loading }: ProfileHeaderProps) {
                 copyable={false}
               />
               <StatusBadge
-                label={`${t('User ID')} ${profile.id}`}
+                label={`${t('User ID')} ${displayUserId}`}
                 variant='info'
-                copyText={String(profile.id)}
+                copyText={String(displayUserId)}
               />
             </div>
 

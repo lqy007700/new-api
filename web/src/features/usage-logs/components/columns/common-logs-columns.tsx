@@ -339,7 +339,8 @@ function buildTypeDetailSegments(
 
 export function useCommonLogsColumns(
   isAdmin: boolean,
-  isRoot: boolean
+  isRoot: boolean,
+  showWalletSource = false
 ): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
@@ -668,9 +669,9 @@ export function useCommonLogsColumns(
           <div className='flex w-fit flex-col gap-0.5'>
             <ModelBadge
               modelName={modelInfo.name}
-              // Keep the upstream model mapping visible to administrators,
-              // but do not expose routing details in the user-facing logs.
+              // Keep routing details visible to administrators only.
               actualModel={isAdmin ? modelInfo.actualModel : undefined}
+              responseModel={modelInfo.responseModel}
             />
           </div>
         )
@@ -758,7 +759,13 @@ export function useCommonLogsColumns(
 
         const quota = row.getValue('quota') as number
         const other = parseLogOther(log.other)
-        return <LogCostDisplay quota={quota} other={other} />
+        return (
+          <LogCostDisplay
+            quota={quota}
+            other={other}
+            showWalletSource={showWalletSource}
+          />
+        )
       },
     },
 
