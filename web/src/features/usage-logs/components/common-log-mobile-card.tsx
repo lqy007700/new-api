@@ -40,7 +40,7 @@ import {
 } from '../lib/utils'
 import { ModelBadge, ResponseModelDetails } from './model-badge'
 import { StreamTpsCell, TimingMetricsCell } from './timing-metrics-cell'
-import { useUsageLogsContext } from './usage-logs-provider'
+import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 type FieldName =
   | 'model'
@@ -64,6 +64,7 @@ export function CommonLogMobileCard<TData>(props: {
 }) {
   const { t } = useTranslation()
   const context = useUsageLogsContext()
+  const { isAdminView } = useLogsViewScope()
   const [selectedField, setSelectedField] = useState<FieldName | null>(null)
   const log = props.log
   const other = parseLogOther(log.other)
@@ -148,8 +149,8 @@ export function CommonLogMobileCard<TData>(props: {
           <div className='min-w-0 flex-[1_1_10rem]'>
             <ModelBadge
               modelName={model.name}
-              actualModel={model.actualModel}
-              responseModel={model.responseModel}
+              actualModel={isAdminView ? model.actualModel : undefined}
+              responseModel={isAdminView ? model.responseModel : undefined}
               wrapText
               onInspect={() => setSelectedField('model')}
             />
@@ -351,10 +352,13 @@ export function CommonLogMobileCard<TData>(props: {
             <p className='bg-muted rounded-lg p-4 text-base [overflow-wrap:anywhere] whitespace-pre-wrap'>
               {activeField.value}
             </p>
-            {selectedField === 'model' && model.responseModel && (
-              <ResponseModelDetails observation={model.responseModel} />
-            )}
             {selectedField === 'model' &&
+              isAdminView &&
+              model.responseModel && (
+                <ResponseModelDetails observation={model.responseModel} />
+              )}
+            {selectedField === 'model' &&
+              isAdminView &&
               !model.responseModel &&
               model.actualModel && (
                 <div className='space-y-2'>

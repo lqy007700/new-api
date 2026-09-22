@@ -682,7 +682,7 @@ export function useCommonLogsColumns(
                 modelName={modelInfo.name}
                 // Keep routing details visible to administrators only.
                 actualModel={isAdmin ? modelInfo.actualModel : undefined}
-                responseModel={modelInfo.responseModel}
+                responseModel={isAdmin ? modelInfo.responseModel : undefined}
               />
             </div>
           )

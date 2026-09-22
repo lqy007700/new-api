@@ -1128,7 +1128,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           />
         )}
 
-        {other?.response_model && (
+        {props.isAdmin && other?.response_model && (
           <DetailSection label={t('Response Model')}>
             <ResponseModelDetails observation={other.response_model} />
           </DetailSection>
