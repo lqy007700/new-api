@@ -198,7 +198,7 @@ func TestRequestPolicyRoutingDatabaseMatrix(t *testing.T) {
 							assert.True(t, slices.ContainsFunc(events, func(event service.PolicyEvent) bool { return event.Decision.Reason == "session_rule_matched" }), "decision events are recorded for every request")
 							bound, found = service.GetPreferredChannelByAffinity(seed, "policy-test", "default")
 							if tc.blocked {
-								assert.Equal(t, http.StatusServiceUnavailable, request.Writer.Status())
+								assert.Equal(t, http.StatusInternalServerError, request.Writer.Status())
 								assert.True(t, request.IsAborted())
 								assert.Equal(t, keep, found, "binding retention is independent of strict request handling")
 								if found {

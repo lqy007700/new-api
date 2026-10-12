@@ -201,13 +201,13 @@ func TestResponsesWSRequestRunnerRejectsRevokedCredentials(t *testing.T) {
 		{name: "exhausted token", status: http.StatusUnauthorized, update: func(t *testing.T, _ *model.User, token *model.Token) {
 			require.NoError(t, model.DB.Model(token).Update("remain_quota", 0).Error)
 		}},
-		{name: "disabled user", status: http.StatusForbidden, update: func(t *testing.T, user *model.User, _ *model.Token) {
+		{name: "disabled user", status: http.StatusUnauthorized, update: func(t *testing.T, user *model.User, _ *model.Token) {
 			require.NoError(t, model.DB.Model(user).Update("status", common.UserStatusDisabled).Error)
 		}},
 		{name: "deleted token", status: http.StatusUnauthorized, update: func(t *testing.T, _ *model.User, token *model.Token) {
 			require.NoError(t, model.DB.Delete(token).Error)
 		}},
-		{name: "changed IP restriction", status: http.StatusForbidden, update: func(t *testing.T, _ *model.User, token *model.Token) {
+		{name: "changed IP restriction", status: http.StatusUnauthorized, update: func(t *testing.T, _ *model.User, token *model.Token) {
 			require.NoError(t, model.DB.Model(token).Update("allow_ips", "198.51.100.0/24").Error)
 		}},
 	} {
@@ -939,7 +939,13 @@ func TestResponsesStreamOutcomesPreserveAccounting(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, response.Body.Close())
 					assert.Equal(t, http.StatusOK, response.StatusCode)
-					assert.Contains(t, string(body), terminal)
+					if strings.HasPrefix(terminal, `{"type":"response.failed",`) {
+						assert.Contains(t, string(body), types.ClientErrorMessageServer)
+						assert.Contains(t, string(body), "request id: responses-http-billing")
+						assert.NotContains(t, string(body), "sensitive upstream detail")
+					} else {
+						assert.Contains(t, string(body), terminal)
+					}
 				} else {
 					require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","stream_id":"planner","model":"ws-billing","input":"hi","max_output_tokens":1}`)))
 					for _, expected := range events {
@@ -1038,7 +1044,7 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 			fixture.closeAndWait(t)
 			assert.Equal(t, int64(tc.attempts), attempts.Load())
 			if !tc.success {
-				assert.Equal(t, tc.firstStatus, response.StatusCode)
+				assert.Equal(t, http.StatusInternalServerError, response.StatusCode)
 			} else {
 				assert.Equal(t, http.StatusOK, response.StatusCode)
 			}

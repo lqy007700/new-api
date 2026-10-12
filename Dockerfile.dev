@@ -12,9 +12,9 @@ ENV GOEXPERIMENT=greenteagc
 WORKDIR /build
 
 ADD go.mod go.sum ./
-# relaykit is a local module replacement and must be present before
-# dependency resolution runs in the backend-only development image.
+# Local module replacements must be present before dependency resolution.
 ADD relaykit/go.mod relaykit/go.sum ./relaykit/
+ADD tokenkit/go.mod tokenkit/go.sum ./tokenkit/
 RUN go mod download
 
 COPY . .

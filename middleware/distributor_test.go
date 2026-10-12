@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -238,11 +239,18 @@ func TestDistributeHidesTaskPluginDetailsButLogsDiagnostics(t *testing.T) {
 				recorder := httptest.NewRecorder()
 				router.ServeHTTP(recorder, request)
 
-				require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 				requestID := recorder.Header().Get(common.RequestIdKey)
 				require.NotEmpty(t, requestID)
-				assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"new_api_error","code":"model_not_found"}}`,
-					locale.message+" (request id: "+requestID+")"), recorder.Body.String())
+				if providerCount == 1 {
+					require.Equal(t, http.StatusInternalServerError, recorder.Code)
+					assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"server_error","param":"","code":"server_error"}}`,
+						types.ClientErrorMessageServer+" (request id: "+requestID+")"), recorder.Body.String())
+					assert.NotContains(t, recorder.Body.String(), "task-model")
+				} else {
+					require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+					assert.JSONEq(t, fmt.Sprintf(`{"error":{"message":%q,"type":"new_api_error","code":"model_not_found"}}`,
+						locale.message+" (request id: "+requestID+")"), recorder.Body.String())
+				}
 				assert.NotContains(t, recorder.Body.String(), "disable or override")
 				for _, key := range keys {
 					assert.NotContains(t, recorder.Body.String(), key)

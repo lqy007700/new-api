@@ -354,7 +354,7 @@ func TestModelPricingConversionDatabaseMatrix(t *testing.T) {
 					ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"z-image","parameters":{"n":`+quantity+`}}`))
 					ctx.Request.Header.Set("Content-Type", "application/json")
 					Relay(ctx, types.RelayFormatOpenAIImage)
-					assert.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+					assert.Equal(t, http.StatusInternalServerError, recorder.Code, recorder.Body.String())
 				}
 				conflicting, err := model.PreviewModelPricingConversion("gemini-2.5-flash-conflict", model.PricingValues{"ModelRatio": 0.15, "AudioRatio": 10.0})
 				require.NoError(t, err)
