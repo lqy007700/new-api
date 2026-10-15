@@ -16,7 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { selectLatestRelease, type SystemRelease } from './releases'
+import {
+  selectLatestRelease,
+  selectLatestXXRelease,
+  XX_RELEASE_REPOSITORY,
+  type SystemRelease,
+} from './releases'
 
 export type UpdateCheckErrorCode =
   | 'network'
@@ -32,7 +37,8 @@ export class UpdateCheckError extends Error {
 }
 
 export async function fetchLatestSystemRelease(
-  signal: AbortSignal
+  signal: AbortSignal,
+  source: 'official' | 'x-x' = 'x-x'
 ): Promise<SystemRelease | null> {
   const controller = new AbortController()
   const cancel = () => controller.abort()
@@ -42,7 +48,9 @@ export async function fetchLatestSystemRelease(
 
   try {
     const response = await fetch(
-      'https://api.github.com/repos/QuantumNous/new-api/releases?per_page=100',
+      source === 'x-x'
+        ? `https://api.github.com/repos/${XX_RELEASE_REPOSITORY}/releases?per_page=100`
+        : 'https://api.github.com/repos/QuantumNous/new-api/releases?per_page=100',
       {
         credentials: 'omit',
         headers: { Accept: 'application/vnd.github+json' },
@@ -55,7 +63,10 @@ export async function fetchLatestSystemRelease(
     if (!response.ok) throw new UpdateCheckError('network')
 
     try {
-      return selectLatestRelease(await response.json())
+      const payload: unknown = await response.json()
+      return source === 'x-x'
+        ? selectLatestXXRelease(payload)
+        : selectLatestRelease(payload)
     } catch (error) {
       if (controller.signal.aborted) throw error
       throw new UpdateCheckError('payload')

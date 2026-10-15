@@ -7287,6 +7287,10 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "X-X custom releases are checked here. Official New API releases must be merged and built before deployment.": "X-X custom releases are checked here. Official New API releases must be merged and built before deployment.",
+    "Official New API baseline": "Official New API baseline",
+    "Build commit": "Build commit",
+    "Updates are installed manually using blue-green deployment. Checking for updates does not change the running service.": "Updates are installed manually using blue-green deployment. Checking for updates does not change the running service."
   }
 }

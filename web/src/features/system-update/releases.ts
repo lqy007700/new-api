@@ -18,12 +18,24 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+export const XX_RELEASE_REPOSITORY = 'lqy007700/new-api'
+export const XX_RELEASE_TAG_PREFIX = 'x-x-custom-'
+
 export const systemReleaseSchema = z.object({
   tag_name: z.string().trim().min(1),
   name: z.string().nullable().optional(),
   body: z.string().nullable().optional(),
   published_at: z.iso.datetime().nullable().optional(),
   prerelease: z.boolean(),
+  assets: z
+    .array(
+      z.object({
+        name: z.string(),
+        state: z.string(),
+        size: z.number().nonnegative(),
+      })
+    )
+    .optional(),
 })
 
 export type SystemRelease = z.infer<typeof systemReleaseSchema>
@@ -33,6 +45,7 @@ type SystemVersion = {
   stage: number
   sequence: bigint
   revision: bigint
+  customRevision: bigint
 }
 
 const releaseStages: Record<string, number> = {
@@ -49,8 +62,9 @@ export function parseSystemVersion(
 ): SystemVersion | null {
   const match = value
     ?.trim()
+    .replace(/^x-x-custom-/, '')
     .match(
-      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:\+[\da-zA-Z.-]+)?$/
+      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:-x-x\.([1-9]\d*))?(?:\+[\da-zA-Z.-]+)?$/
     )
   if (!match || (match[4] && match[2] !== 'rc')) return null
 
@@ -62,6 +76,7 @@ export function parseSystemVersion(
     stage: releaseStages[match[2] ?? 'stable'],
     sequence: BigInt(match[3] ?? '0'),
     revision: BigInt(match[4] ?? '0'),
+    customRevision: BigInt(match[5] ?? '0'),
   }
 }
 
@@ -81,6 +96,9 @@ export function compareSystemVersions(
   if (a.stage !== b.stage) return a.stage < b.stage ? -1 : 1
   if (a.sequence !== b.sequence) return a.sequence < b.sequence ? -1 : 1
   if (a.revision !== b.revision) return a.revision < b.revision ? -1 : 1
+  if (a.customRevision !== b.customRevision) {
+    return a.customRevision < b.customRevision ? -1 : 1
+  }
   return 0
 }
 
@@ -110,6 +128,48 @@ export function selectLatestRelease(payload: unknown): SystemRelease | null {
   return latest
 }
 
-export function getSystemReleaseUrl(release: SystemRelease): string {
+/** Only advertise custom tags whose amd64 image and checksum finished uploading. */
+export function selectLatestXXRelease(payload: unknown): SystemRelease | null {
+  if (!Array.isArray(payload)) throw new Error('Unexpected release payload')
+  // Validate the payload even when none of its releases are applicable to X-X.
+  selectLatestRelease(payload)
+  return selectLatestRelease(
+    payload.filter((item: unknown) => {
+      const parsed = publishedReleaseSchema.safeParse(item)
+      if (!parsed.success) return false
+      const release = parsed.data
+      const version = parseSystemVersion(release.tag_name)
+      if (
+        !release.tag_name.startsWith(XX_RELEASE_TAG_PREFIX) ||
+        !version?.customRevision
+      ) {
+        return false
+      }
+      const archive = `new-api-x-x-${release.tag_name}-linux-amd64.tar.gz`
+      return [archive, `${archive}.sha256`].every((name) =>
+        release.assets?.some(
+          (asset) =>
+            asset.name === name && asset.state === 'uploaded' && asset.size > 0
+        )
+      )
+    })
+  )
+}
+
+export function formatXXVersionLabel(value: string): string {
+  const match = value.match(
+    /^v?(\d+(?:\.\d+){2,})(?:-((?:alpha|beta|rc|patch)\.\d+(?:-i18nfix\.\d+)?))?-x-x\.([1-9]\d*)(?:\+[\da-zA-Z.-]+)?$/
+  )
+  if (!match) return value
+  return `X-X ${match[2] || `v${match[1]}`} · ${match[3]}`
+}
+
+export function getSystemReleaseUrl(
+  release: SystemRelease,
+  source: 'official' | 'x-x' = 'official'
+): string {
+  if (source === 'x-x') {
+    return `https://github.com/${XX_RELEASE_REPOSITORY}/releases/tag/${encodeURIComponent(release.tag_name)}`
+  }
   return `https://github.com/QuantumNous/new-api/releases/tag/${encodeURIComponent(release.tag_name)}`
 }

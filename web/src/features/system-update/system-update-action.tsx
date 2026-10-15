@@ -32,6 +32,7 @@ import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { formatXXVersionLabel } from './releases'
 import { SystemUpdateDialog } from './system-update-dialog'
 import { useSystemUpdate } from './use-system-update'
 
@@ -105,7 +106,7 @@ function AdminSystemUpdateAction(props: SystemUpdateActionProps) {
           aria-hidden='true'
         />
         <span className='hidden max-w-32 truncate font-mono text-xs @min-[22rem]/system-brand:inline'>
-          {version}
+          {formatXXVersionLabel(version)}
         </span>
         {update.shouldNotify && (
           <Badge

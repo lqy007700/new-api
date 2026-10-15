@@ -7266,6 +7266,10 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "X-X custom releases are checked here. Official New API releases must be merged and built before deployment.": "Chỉ kiểm tra các bản phát hành tùy chỉnh X-X tại đây. Cần hợp nhất và xây dựng bản New API chính thức trước khi triển khai.",
+    "Official New API baseline": "Phiên bản New API chính thức làm nền",
+    "Build commit": "Commit bản dựng",
+    "Updates are installed manually using blue-green deployment. Checking for updates does not change the running service.": "Cài đặt bản cập nhật thủ công bằng triển khai blue-green. Kiểm tra cập nhật không thay đổi dịch vụ đang chạy."
   }
 }

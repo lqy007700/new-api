@@ -47,7 +47,7 @@ import {
 } from './store'
 
 export const SYSTEM_UPDATE_INTERVAL = 60 * 60 * 1000
-export const SYSTEM_UPDATE_QUERY_KEY = ['system-update'] as const
+export const SYSTEM_UPDATE_QUERY_KEY = ['system-update', 'x-x'] as const
 
 export function getUpdateErrorMessage(
   code: UpdateCheckErrorCode,
@@ -148,7 +148,7 @@ export function useSystemUpdate() {
     }
   }, [isAdmin, queryClient])
 
-  const version = status?.version?.trim()
+  const version = (status?.x_x_build?.version || status?.version)?.trim()
   const currentVersion =
     version === 'v0.0.0' || version === '0.0.0'
       ? undefined
@@ -183,6 +183,8 @@ export function useSystemUpdate() {
 
   return {
     currentVersion,
+    upstreamVersion: status?.x_x_build?.upstream_version,
+    buildCommit: status?.x_x_build?.commit,
     release,
     comparison,
     hasUpdate,

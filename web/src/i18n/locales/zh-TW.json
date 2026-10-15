@@ -7266,6 +7266,10 @@
     "Zhipu": "智譜",
     "Zhipu GLM": "智譜GLM",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "X-X custom releases are checked here. Official New API releases must be merged and built before deployment.": "此處僅檢查 X-X 自維護版本。官方 New API 版本須合併並建置後才能部署。",
+    "Official New API baseline": "官方 New API 基線",
+    "Build commit": "建置提交",
+    "Updates are installed manually using blue-green deployment. Checking for updates does not change the running service.": "更新須手動依藍綠部署流程安裝；檢查更新不會變更正在執行的服務。"
   }
 }

@@ -50,7 +50,7 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
   const update = props.update
   const release = update.release
   const snapshot = update.snapshot
-  const releaseUrl = release ? getSystemReleaseUrl(release) : null
+  const releaseUrl = release ? getSystemReleaseUrl(release, 'x-x') : null
   const isPrerelease =
     release &&
     (release.prerelease ||
@@ -81,6 +81,9 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
       onOpenChange={props.onOpenChange}
       trigger={props.trigger}
       title={t('System updates')}
+      description={t(
+        'X-X custom releases are checked here. Official New API releases must be merged and built before deployment.'
+      )}
       bodyClassName='space-y-4'
       footerClassName='sm:flex-wrap'
       footer={
@@ -130,6 +133,32 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
             {update.currentVersion || t('Unknown version')}
           </dd>
         </div>
+        {update.upstreamVersion && (
+          <div className='min-w-0'>
+            <dt className='text-muted-foreground'>
+              {t('Official New API baseline')}
+            </dt>
+            <dd className='font-medium break-all'>
+              <a
+                className='underline underline-offset-4'
+                href={getSystemReleaseUrl({
+                  tag_name: update.upstreamVersion,
+                  prerelease: false,
+                })}
+                target='_blank'
+                rel='noopener noreferrer'
+              >
+                {update.upstreamVersion}
+              </a>
+            </dd>
+          </div>
+        )}
+        {update.buildCommit && (
+          <div className='min-w-0'>
+            <dt className='text-muted-foreground'>{t('Build commit')}</dt>
+            <dd className='font-mono break-all'>{update.buildCommit}</dd>
+          </div>
+        )}
         <div className='min-w-0'>
           <dt className='text-muted-foreground'>{t('Latest version')}</dt>
           <dd className='flex flex-wrap items-center gap-2 font-medium break-all'>
@@ -151,6 +180,11 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
           </div>
         )}
       </dl>
+      <p className='text-muted-foreground text-sm'>
+        {t(
+          'Updates are installed manually using blue-green deployment. Checking for updates does not change the running service.'
+        )}
+      </p>
       {statusText && (
         <p role='status' aria-live='polite' className='text-sm'>
           {statusText}

@@ -7266,6 +7266,10 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "X-X custom releases are checked here. Official New API releases must be merged and built before deployment.": "ここでは X-X 独自リリースのみを確認します。公式 New API はマージとビルドを行ってからデプロイしてください。",
+    "Official New API baseline": "公式 New API のベースバージョン",
+    "Build commit": "ビルドコミット",
+    "Updates are installed manually using blue-green deployment. Checking for updates does not change the running service.": "更新はブルーグリーン方式で手動デプロイします。更新確認で稼働中のサービスが変更されることはありません。"
   }
 }

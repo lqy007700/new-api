@@ -35,7 +35,11 @@ export function UpdateCheckerSection(props: UpdateCheckerSectionProps) {
   const uptime = props.startTime
     ? formatTimestamp(props.startTime)
     : t('Unknown')
-  const version = status?.version || props.currentVersion || t('Unknown')
+  const version =
+    status?.x_x_build?.version ||
+    status?.version ||
+    props.currentVersion ||
+    t('Unknown')
 
   return (
     <SettingsSection title={t('System maintenance')}>

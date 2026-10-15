@@ -78,7 +78,7 @@ export const useSystemUpdateStore = create<SystemUpdateStore>()(
       setSnapshot: (snapshot) => set({ snapshot }),
     }),
     {
-      name: 'system-update:v1',
+      name: 'system-update:x-x:v1',
       storage: createJSONStorage(() => updateStorage),
       partialize: (state) => ({ snapshot: state.snapshot }),
       merge: (persisted, current) => {
@@ -94,7 +94,7 @@ export const useSystemUpdateStore = create<SystemUpdateStore>()(
   )
 )
 
-const preferencesStorageKey = 'system-update-preferences:v1'
+const preferencesStorageKey = 'system-update-preferences:x-x:v1'
 const updatePreferencesSchema = z.object({
   ignoredVersionsByUserId: z.record(
     z.string().regex(/^[1-9]\d*$/),

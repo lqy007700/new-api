@@ -88,6 +88,11 @@ export interface ApiResponse<T = unknown> {
 // ============================================================================
 
 export interface SystemStatus {
+  x_x_build?: {
+    version: string
+    upstream_version: string
+    commit?: string
+  }
   success?: boolean
   message?: string
   data?: {
