@@ -41,6 +41,10 @@ func accessTokenScopeRule(scope string) accessTokenRouteRule {
 // Casbin-guarded routes declare themselves through
 // DeclareAccessTokenPermissionRoute when they are registered.
 var accessTokenRouteRules = map[string]accessTokenRouteRule{
+	// X-X endpoints retain browser-session-only access until dedicated PAT scopes are defined.
+	"GET /api/user/redemption/self":                    accessTokenSessionRule,
+	"GET /api/usage/daily/self":                        accessTokenSessionRule,
+	"POST /api/system-task/token-usage-daily/backfill": accessTokenSessionRule,
 	// router/api-router.go: top level
 	"GET /api/models":                     accessTokenScopeRule("profile:read"),
 	"GET /api/status/test":                accessTokenScopeRule("log:read"),

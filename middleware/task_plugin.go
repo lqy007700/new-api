@@ -78,11 +78,12 @@ func PrepareTaskPluginRoute() gin.HandlerFunc {
 		if err != nil {
 			logger.LogWarn(
 				c,
-				common.LogText("task_plugin subsystem=route event=prepare_rejected generation=%d plugin=%q stage=request_decode reason=invalid_request",
+				common.LogText("task_plugin subsystem=route event=prepare_rejected generation=%d plugin=%q stage=request_decode reason=invalid_request err=%q",
 					generation,
-					pinned.Plugin.Meta.Key),
+					pinned.Plugin.Meta.Key,
+					err.Error()),
 			)
-			status := http.StatusBadRequest
+			status := invalidRequestStatus(err)
 			if errors.Is(err, errTaskPluginUnsupportedMediaType) {
 				status = http.StatusUnsupportedMediaType
 			}
@@ -341,7 +342,7 @@ func PinTaskPluginEndpoint() gin.HandlerFunc {
 						break
 					}
 				}
-				abortWithOpenAiMessage(c, http.StatusBadRequest, "Invalid task protocol request")
+				abortWithOpenAiMessage(c, invalidRequestStatus(err), "Invalid task protocol request")
 				return
 			}
 			c.Next()
@@ -1493,7 +1494,7 @@ func PrepareTaskPluginSubmit() gin.HandlerFunc {
 		)
 		var requestBody map[string]any
 		if err := common.UnmarshalBodyReusable(c, &requestBody); err != nil {
-			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": err.Error(), "type": "invalid_request_error"}})
+			c.AbortWithStatusJSON(invalidRequestStatus(err), gin.H{"error": gin.H{"message": err.Error(), "type": "invalid_request_error"}})
 			return
 		}
 		modelName, _ := requestBody["model"].(string)
