@@ -104,21 +104,13 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 	textOutTokens := usage.OutputTokenDetails.TextTokens
 	audioInputTokens := usage.InputTokenDetails.AudioTokens
 	audioOutTokens := usage.OutputTokenDetails.AudioTokens
-	groupRatio := ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	modelRatio, _, _ := ratio_setting.GetModelRatio(modelName)
 
 	autoGroup, exists := common.GetContextKey(ctx, constant.ContextKeyAutoGroup)
 	if exists {
-		groupRatio = ratio_setting.GetGroupRatio(autoGroup.(string))
-		logger.LogDebug(ctx, "final group ratio: %f", groupRatio)
 		relayInfo.UsingGroup = autoGroup.(string)
 	}
-
-	actualGroupRatio := groupRatio
-	userGroupRatio, ok := ratio_setting.GetGroupGroupRatio(relayInfo.UserGroup, relayInfo.UsingGroup)
-	if ok {
-		actualGroupRatio = userGroupRatio
-	}
+	actualGroupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
 
 	quotaInfo := QuotaInfo{
 		InputDetails: TokenDetails{
@@ -213,12 +205,12 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 			"completion_ratio":       fmt.Sprintf("%.2f", completionRatio.InexactFloat64()),
 			"audio_ratio":            fmt.Sprintf("%.2f", audioRatio.InexactFloat64()),
 			"audio_completion_ratio": fmt.Sprintf("%.2f", audioCompletionRatio.InexactFloat64()),
-			"group_ratio":            fmt.Sprintf("%.2f", groupRatio),
+			"group_ratio":            fmt.Sprintf("%.2f", relayInfo.PriceData.GroupRatioInfo.PublicRatio()),
 		}))
 	} else {
 		logContent = append(logContent, common.NewMessage("Model price {{model_price}}, group ratio {{group_ratio}}", map[string]any{
 			"model_price": fmt.Sprintf("%.2f", modelPrice),
-			"group_ratio": fmt.Sprintf("%.2f", groupRatio),
+			"group_ratio": fmt.Sprintf("%.2f", relayInfo.PriceData.GroupRatioInfo.PublicRatio()),
 		}))
 	}
 
@@ -352,12 +344,12 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 			"completion_ratio":       fmt.Sprintf("%.2f", completionRatio.InexactFloat64()),
 			"audio_ratio":            fmt.Sprintf("%.2f", audioRatio.InexactFloat64()),
 			"audio_completion_ratio": fmt.Sprintf("%.2f", audioCompletionRatio.InexactFloat64()),
-			"group_ratio":            fmt.Sprintf("%.2f", groupRatio),
+			"group_ratio":            fmt.Sprintf("%.2f", relayInfo.PriceData.GroupRatioInfo.PublicRatio()),
 		}))
 	} else {
 		logContent = append(logContent, common.NewMessage("Model price {{model_price}}, group ratio {{group_ratio}}", map[string]any{
 			"model_price": fmt.Sprintf("%.2f", modelPrice),
-			"group_ratio": fmt.Sprintf("%.2f", groupRatio),
+			"group_ratio": fmt.Sprintf("%.2f", relayInfo.PriceData.GroupRatioInfo.PublicRatio()),
 		}))
 	}
 

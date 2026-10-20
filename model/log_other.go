@@ -19,6 +19,8 @@ const (
 // legacySensitiveLogOtherKeys are historical top-level fields that must never
 // be written via SetPublic and must be stripped from user-visible projections.
 var legacySensitiveLogOtherKeys = []string{
+	"billing_group_ratio",
+	"hidden_group_ratio",
 	"channel_id",
 	"channel_name",
 	"channel_type",

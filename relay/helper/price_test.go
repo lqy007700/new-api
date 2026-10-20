@@ -800,3 +800,63 @@ func (s *priceTestReservation) Refund(*gin.Context)      {}
 func (s *priceTestReservation) NeedsRefund() bool        { return false }
 func (s *priceTestReservation) GetPreConsumedQuota() int { return s.held }
 func (s *priceTestReservation) Reserve(quota int) error  { s.held = max(s.held, quota); return nil }
+
+func TestHiddenGroupRatioPricing(t *testing.T) {
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error { saved[key] = value; return nil }))
+	t.Cleanup(func() { require.NoError(t, config.GlobalConfig.LoadFromDB(saved)) })
+	originalModelPrice := ratio_setting.ModelPrice2JSONString()
+	originalModelRatio := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(originalModelPrice))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatio))
+	})
+	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"hidden-fixed":0.01}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"hidden-token":2}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
+		"group_ratio_setting.group_ratio":        `{"default":1,"free":0,"special":1}`,
+		"group_ratio_setting.group_group_ratio":  `{"vip":{"default":0.8}}`,
+		"group_ratio_setting.hidden_group_ratio": `{"default":1.25,"free":2,"special":0}`,
+		"billing_setting.billing_mode":           `{"hidden-expr":"tiered_expr"}`,
+		"billing_setting.billing_expr":           `{"hidden-expr":"tier(\"base\", p * 4 + c * 8)"}`,
+		"quota_setting.pre_consume_multiplier":   "1",
+	}))
+	for _, tc := range []struct {
+		name, model, userGroup, group string
+		auto                          string
+		want, actual                  int
+		public, billing               float64
+	}{
+		{"legacy tokens", "hidden-token", "vip", "default", "", 2500, 0, 0.8, 1.25},
+		{"fixed request", "hidden-fixed", "vip", "default", "", 6250, 0, 0.8, 1.25},
+		{"tiered reservation and settlement", "hidden-expr", "vip", "default", "", 2500, 3500, 0.8, 1.25},
+		{"public free group still pays hidden rate", "hidden-token", "vip", "free", "", 4000, 0, 0, 2},
+		{"explicit hidden zero", "hidden-token", "vip", "special", "", 0, 0, 1, 0},
+		{"auto selects actual group", "hidden-token", "vip", "default", "free", 4000, 0, 0, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			if tc.auto != "" {
+				ctx.Set("auto_group", tc.auto)
+			}
+			info := &relaycommon.RelayInfo{OriginModelName: tc.model, UserGroup: tc.userGroup, UsingGroup: tc.group, BillingRequestInput: &billingexpr.RequestInput{}}
+			price, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, price.QuotaToPreConsume)
+			assert.Equal(t, tc.public, price.GroupRatioInfo.PublicRatio())
+			assert.Equal(t, tc.billing, price.GroupRatioInfo.GroupRatio)
+			assert.Equal(t, tc.public, service.GetUserGroupRatio(tc.userGroup, info.UsingGroup), "public APIs keep the advertised ratio")
+			if tc.actual > 0 {
+				result, err := billingexpr.ComputeTieredQuotaWithRequest(info.TieredBillingSnapshot, billingexpr.TokenParams{P: 1000, C: 200, Len: 1000}, billingexpr.RequestInput{})
+				require.NoError(t, err)
+				assert.Equal(t, tc.actual, result.ActualQuotaAfterGroup)
+			}
+		})
+	}
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"group_ratio_setting.hidden_group_ratio": "{}"}))
+	info := ratio_setting.ResolveBillingGroupRatio("vip", "default")
+	assert.Equal(t, 0.8, info.GroupRatio)
+	assert.Nil(t, info.DisplayGroupRatio)
+	assert.Equal(t, 1.0, ratio_setting.ResolveBillingGroupRatio("default", "default").GroupRatio)
+}

@@ -116,6 +116,7 @@ export interface ToolSurchargeItem {
 
 export interface LogOtherData {
   admin_info?: {
+    billing_group_ratio?: number
     request_policy?: PolicyEvent[]
     is_multi_key?: boolean
     multi_key_index?: number

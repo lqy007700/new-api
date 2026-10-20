@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -1808,5 +1809,56 @@ func TestSettle_TokenRecalcFallsBackToCompletionTokens(t *testing.T) {
 			assert.Equal(t, testCase.wantSettled, settled)
 			assert.Equal(t, testCase.wantQuota, task.Quota)
 		})
+	}
+}
+
+func TestHiddenTaskRatioFrozenSettlementAndRefund(t *testing.T) {
+	truncate(t)
+	const userID, channelID, tokenID = 9101, 9101, 9101
+	seedUser(t, userID, 10_000)
+	seedChannel(t, channelID)
+	seedToken(t, tokenID, userID, "hidden-task-test-key", 10_000)
+	seedChargedAccounting(t, userID, channelID, tokenID, 1000, 1)
+	saved := map[string]string{}
+	require.NoError(t, config.GlobalConfig.SaveToDB(func(k, v string) error { saved[k] = v; return nil }))
+	original := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(original))
+	})
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"hidden-task":99}`))
+	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{ratio_setting.HiddenGroupRatioOptionKey: `{"default":7}`}))
+	public := 0.8
+	ratios := types.GroupRatioInfo{GroupRatio: 1.25, GroupSpecialRatio: -1, DisplayGroupRatio: &public}
+	task := makeTask(userID, channelID, 1000, tokenID, BillingSourceWallet, 0)
+	task.Properties.OriginModelName = "hidden-task"
+	task.PrivateData.BillingContext = &model.TaskBillingContext{OriginModelName: "hidden-task", ModelRatio: 2, GroupRatio: 1.25, GroupRatioInfo: &ratios}
+	require.NoError(t, task.Insert())
+	require.True(t, RecalculateTaskQuotaByTokens(context.Background(), task, 1000))
+	assert.Equal(t, 2500, task.Quota)
+	var user model.User
+	require.NoError(t, model.DB.First(&user, userID).Error)
+	assert.Equal(t, 8500, user.Quota)
+	assert.Equal(t, 2500, user.UsedQuota)
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]any
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	assert.Equal(t, 0.8, other["group_ratio"])
+	assert.NotContains(t, log.Content, "group ratio 1.25")
+	assert.Equal(t, 1.25, other["admin_info"].(map[string]any)["billing_group_ratio"])
+	require.True(t, RefundTaskQuota(context.Background(), task, "upstream failed"))
+	require.NoError(t, model.DB.First(&user, userID).Error)
+	assert.Equal(t, 11000, user.Quota)
+	assert.Zero(t, user.UsedQuota)
+	userLogs, err := model.GetLogByTokenId(tokenID)
+	require.NoError(t, err)
+	require.NotEmpty(t, userLogs)
+	for _, log := range userLogs {
+		var publicOther map[string]any
+		require.NoError(t, common.UnmarshalJsonStr(log.Other, &publicOther))
+		assert.NotContains(t, publicOther, "admin_info")
+		assert.NotContains(t, publicOther, "billing_group_ratio")
+		assert.Equal(t, 0.8, publicOther["group_ratio"])
 	}
 }

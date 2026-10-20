@@ -112,10 +112,18 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		realtime, reserveInsufficient             bool
 		wallet, outboundImages                    int
 		groupRatio                                float64
+		displayGroupRatio                         *float64
 		want                                      int
 		unit                                      billingexpr.BillingUnit
 		requestedImages, actualImages             int
 	}{
+		{name: "hidden ratio actual charge with public log", expression: flat, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.8), want: 6250, unit: billingexpr.BillingUnitRequest},
+		{name: "hidden audio ratio never leaks in content", expression: flat, audio: true, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.8), usage: &dto.Usage{}, want: 6250, unit: billingexpr.BillingUnitRequest},
+		{name: "hidden realtime ratio never leaks in content", expression: `tier("base", p * 4)`, realtime: true, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.8), estimate: 1000, usage: &dto.Usage{PromptTokens: 1000, TotalTokens: 1000}, want: 2500, unit: billingexpr.BillingUnitToken},
+		{name: "public free ratio still charges hidden price", expression: flat, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.0), want: 6250, unit: billingexpr.BillingUnitRequest},
+		{name: "hidden free ratio settles zero", expression: flat, groupRatio: 0, displayGroupRatio: common.GetPointer(1.0), want: 0, unit: billingexpr.BillingUnitRequest},
+		{name: "hidden ratio refund returns actual reservation", expression: flat, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.8), refund: true},
+		{name: "hidden ratio insufficient wallet", expression: flat, groupRatio: 1.25, displayGroupRatio: common.GetPointer(0.8), insufficient: true},
 		{name: "missing usage charges once", expression: flat, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "zero usage charges once", expression: flat, usage: &dto.Usage{}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "stream charges once", expression: flat, stream: true, usage: &dto.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120}, want: 5000, unit: billingexpr.BillingUnitRequest},
@@ -162,7 +170,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 				require.NoError(t, db.Unscoped().Delete(&channel).Error)
 			})
 			group := tc.groupRatio
-			if group == 0 {
+			if group == 0 && tc.displayGroupRatio == nil {
 				group = 1
 			}
 			request := &billingexpr.RequestInput{Body: []byte(`{"fast":true}`)}
@@ -175,7 +183,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 			require.NoError(t, err)
 			snapshot := &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: tc.expression, ExprHash: billingexpr.ExprHashString(tc.expression), QuotaPerUnit: common.QuotaPerUnit, GroupRatio: group, EstimatedTier: trace.MatchedTier, EstimatedBillingUnit: trace.BillingUnit, EstimatedFixedPrice: trace.FixedPrice, EstimatedQuotaAfterGroup: reservation}
 			snapshot.EstimatedImageCount = trace.ImageCount
-			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channel.Id}, OriginModelName: "fixed-test", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), IsStream: tc.stream, RelayFormat: types.RelayFormatOpenAI, PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: group}}, TieredBillingSnapshot: snapshot, BillingRequestInput: request}
+			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channel.Id}, OriginModelName: "fixed-test", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), IsStream: tc.stream, RelayFormat: types.RelayFormatOpenAI, PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: group, DisplayGroupRatio: tc.displayGroupRatio}}, TieredBillingSnapshot: snapshot, BillingRequestInput: request}
 			info.SetEstimatePromptTokens(tc.estimate)
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
@@ -245,6 +253,22 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					var other map[string]any
 					require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
 					assert.Equal(t, string(tc.unit), other["billing_unit"])
+					if tc.displayGroupRatio != nil {
+						assert.Equal(t, *tc.displayGroupRatio, other["group_ratio"])
+						admin, ok := other["admin_info"].(map[string]any)
+						require.True(t, ok)
+						assert.Equal(t, group, admin["billing_group_ratio"])
+						assert.NotContains(t, log.Content, fmt.Sprintf("group ratio %.2f", group))
+						userLogs, err := model.GetLogByTokenId(token.Id)
+						require.NoError(t, err)
+						require.Len(t, userLogs, 1)
+						var userOther map[string]any
+						require.NoError(t, common.UnmarshalJsonStr(userLogs[0].Other, &userOther))
+						assert.Equal(t, *tc.displayGroupRatio, userOther["group_ratio"])
+						assert.NotContains(t, userOther, "admin_info")
+						assert.NotContains(t, userOther, "billing_group_ratio")
+					}
+
 					if tc.requestedImages > 0 {
 						count := tc.actualImages
 						if count == 0 {

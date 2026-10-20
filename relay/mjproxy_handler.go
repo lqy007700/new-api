@@ -279,7 +279,7 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		tokenName := c.GetString("token_name")
 		logContent := []*common.Message{common.NewMessage("Model fixed price {{model_price}}, group ratio {{group_ratio}}, action {{action}}", map[string]any{
 			"model_price": fmt.Sprintf("%.2f", priceData.ModelPrice),
-			"group_ratio": fmt.Sprintf("%.2f", priceData.GroupRatioInfo.GroupRatio),
+			"group_ratio": fmt.Sprintf("%.2f", priceData.GroupRatioInfo.PublicRatio()),
 			"action":      constant.MjActionSwapFace,
 		})}
 		other := service.GenerateMjOtherInfo(info, priceData)
@@ -657,7 +657,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		tokenName := c.GetString("token_name")
 		logContent := []*common.Message{common.NewMessage("Model fixed price {{model_price}}, group ratio {{group_ratio}}, action {{action}}, ID {{id}}", map[string]any{
 			"model_price": fmt.Sprintf("%.2f", priceData.ModelPrice),
-			"group_ratio": fmt.Sprintf("%.2f", priceData.GroupRatioInfo.GroupRatio),
+			"group_ratio": fmt.Sprintf("%.2f", priceData.GroupRatioInfo.PublicRatio()),
 			"action":      midjRequest.Action,
 			"id":          midjResponse.Result,
 		})}

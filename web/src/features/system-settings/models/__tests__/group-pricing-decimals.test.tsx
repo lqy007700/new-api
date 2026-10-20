@@ -26,6 +26,7 @@ import { GroupRatioVisualEditor } from '../group-ratio-visual-editor'
 function PricingFixture() {
   const [settings, setSettings] = useState<Record<string, string>>({
     GroupRatio: '{"default":1}',
+    HiddenGroupRatio: '{}',
     TopupGroupRatio: '{}',
     UserUsableGroups: '{}',
   })
@@ -36,6 +37,7 @@ function PricingFixture() {
         onSectionChange={() => {}}
         defaultUseAutoGroupField={null}
         groupRatio={settings.GroupRatio}
+        hiddenGroupRatio={settings.HiddenGroupRatio}
         topupGroupRatio={settings.TopupGroupRatio}
         userUsableGroups={settings.UserUsableGroups}
         groupGroupRatio='{}'
@@ -53,7 +55,7 @@ function PricingFixture() {
 
 test.each([
   ['GroupRatio', 0],
-  ['TopupGroupRatio', 1],
+  ['TopupGroupRatio', 2],
 ] as const)(
   '%s preserves typed decimals and accepts them as valid numeric ratios',
   async (key, index) => {
@@ -87,3 +89,29 @@ test.each([
     expect(input.validity.rangeUnderflow).toBe(true)
   }
 )
+
+test('hidden ratio preserves explicit zero, follows renamed groups, and clears back to public pricing', async () => {
+  const user = userEvent.setup()
+  render(<PricingFixture />)
+  const hidden = screen.getByRole('spinbutton', { name: 'Hidden ratio' })
+  expect(hidden).toHaveValue(null)
+  fireEvent.change(hidden, { target: { value: '1.25' } })
+  let saved = JSON.parse(
+    screen.getByRole('status', { name: 'Saved ratios' }).textContent ?? '{}'
+  )
+  expect(JSON.parse(saved.HiddenGroupRatio)).toEqual({ default: 1.25 })
+  expect(JSON.parse(saved.GroupRatio)).toEqual({ default: 1 })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Group name' }), {
+    target: { value: 'premium' },
+  })
+  fireEvent.change(hidden, { target: { value: '0' } })
+  saved = JSON.parse(
+    screen.getByRole('status', { name: 'Saved ratios' }).textContent ?? '{}'
+  )
+  expect(JSON.parse(saved.HiddenGroupRatio)).toEqual({ premium: 0 })
+  await user.clear(hidden)
+  saved = JSON.parse(
+    screen.getByRole('status', { name: 'Saved ratios' }).textContent ?? '{}'
+  )
+  expect(JSON.parse(saved.HiddenGroupRatio)).toEqual({})
+})

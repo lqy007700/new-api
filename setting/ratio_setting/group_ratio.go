@@ -3,6 +3,8 @@ package ratio_setting
 import (
 	"encoding/json"
 	"errors"
+	"math"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -17,6 +19,10 @@ var defaultGroupRatio = map[string]float64{
 
 var groupRatioMap = types.NewRWMap[string, float64]()
 
+const HiddenGroupRatioOptionKey = "group_ratio_setting.hidden_group_ratio"
+
+var hiddenGroupRatioMap = types.NewRWMap[string, float64]()
+
 var defaultGroupGroupRatio = map[string]map[string]float64{
 	"vip": {
 		"edit_this": 0.9,
@@ -28,6 +34,7 @@ var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
 var defaultGroupSpecialUsableGroup = map[string]map[string]string{}
 
 type GroupRatioSetting struct {
+	HiddenGroupRatio        *types.RWMap[string, float64]            `json:"hidden_group_ratio"`
 	GroupRatio              *types.RWMap[string, float64]            `json:"group_ratio"`
 	GroupGroupRatio         *types.RWMap[string, map[string]float64] `json:"group_group_ratio"`
 	GroupSpecialUsableGroup *types.RWMap[string, map[string]string]  `json:"group_special_usable_group"`
@@ -43,6 +50,7 @@ func init() {
 	groupGroupRatioMap.AddAll(defaultGroupGroupRatio)
 
 	groupRatioSetting = GroupRatioSetting{
+		HiddenGroupRatio:        hiddenGroupRatioMap,
 		GroupSpecialUsableGroup: groupSpecialUsableGroup,
 		GroupRatio:              groupRatioMap,
 		GroupGroupRatio:         groupGroupRatioMap,
@@ -83,6 +91,39 @@ func GetGroupRatio(name string) float64 {
 		return 1
 	}
 	return ratio
+}
+
+// ResolveBillingGroupRatio keeps public pricing separate from the amount used
+// by reservations and settlement. An explicit hidden zero is a free group.
+func ResolveBillingGroupRatio(userGroup, usingGroup string) types.GroupRatioInfo {
+	info := types.GroupRatioInfo{GroupRatio: GetGroupRatio(usingGroup), GroupSpecialRatio: -1}
+	if ratio, ok := GetGroupGroupRatio(userGroup, usingGroup); ok {
+		info.GroupRatio = ratio
+		info.GroupSpecialRatio = ratio
+		info.HasSpecialRatio = true
+	}
+	if ratio, ok := hiddenGroupRatioMap.Get(usingGroup); ok && ratio >= 0 && !math.IsNaN(ratio) && !math.IsInf(ratio, 0) {
+		publicRatio := info.GroupRatio
+		info.DisplayGroupRatio = &publicRatio
+		info.GroupRatio = ratio
+	}
+	return info
+}
+
+func ValidateHiddenGroupRatios(value string) error {
+	var ratios map[string]*float64
+	if err := common.UnmarshalJsonStr(value, &ratios); err != nil {
+		return errors.New("Hidden group ratios must be a JSON object of non-negative numbers")
+	}
+	if ratios == nil {
+		return errors.New("Hidden group ratios must be a JSON object of non-negative numbers")
+	}
+	for group, ratio := range ratios {
+		if strings.TrimSpace(group) == "" || ratio == nil || *ratio < 0 || math.IsNaN(*ratio) || math.IsInf(*ratio, 0) {
+			return errors.New("Hidden group ratios must be a JSON object of non-negative numbers")
+		}
+	}
+	return nil
 }
 
 func GetGroupGroupRatio(userGroup, usingGroup string) (float64, bool) {

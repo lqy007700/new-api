@@ -44,6 +44,7 @@ const getModelDefaults = (settings: BillingSettings) => ({
 const getGroupDefaults = (settings: BillingSettings) => ({
   TopupGroupRatio: settings.TopupGroupRatio,
   GroupRatio: settings.GroupRatio,
+  HiddenGroupRatio: settings['group_ratio_setting.hidden_group_ratio'],
   UserUsableGroups: settings.UserUsableGroups,
   GroupGroupRatio: settings.GroupGroupRatio,
   AutoGroups: settings.AutoGroups,

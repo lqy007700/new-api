@@ -61,6 +61,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 	if info.PriceData.GroupRatioInfo.HasSpecialRatio {
 		other.SetPublic("user_group_ratio", info.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	appendHiddenGroupRatio(other, info.PriceData.GroupRatioInfo)
 	if info.IsModelMapped {
 		other.SetPublic("is_model_mapped", true)
 		other.SetPublic("upstream_model_name", info.UpstreamModelName)
@@ -155,6 +156,12 @@ func taskBillingOther(task *model.Task) *model.LogOther {
 			other.SetPublic("model_ratio", bc.ModelRatio)
 		}
 		other.SetPublic("group_ratio", bc.GroupRatio)
+		if bc.GroupRatioInfo != nil {
+			if bc.GroupRatioInfo.HasSpecialRatio {
+				other.SetPublic("user_group_ratio", bc.GroupRatioInfo.GroupSpecialRatio)
+			}
+			appendHiddenGroupRatio(other, *bc.GroupRatioInfo)
+		}
 		if priceData := taskBillingContextPriceData(bc); priceData != nil {
 			for k, v := range priceData.OtherRatios() {
 				if !other.SetPublic(k, v) {
@@ -388,6 +395,11 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 
 	// 获取模型价格和倍率
 	modelRatio, hasRatioSetting, _ := ratio_setting.GetModelRatio(modelName)
+	bc := task.PrivateData.BillingContext
+	if bc != nil && bc.GroupRatioInfo != nil && bc.ModelRatio > 0 {
+		modelRatio = bc.ModelRatio
+		hasRatioSetting = true
+	}
 	// 只有配置了倍率(非固定价格)时才按 token 重新计费
 	if !hasRatioSetting || modelRatio <= 0 {
 		return false
@@ -414,6 +426,11 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	} else {
 		finalGroupRatio = groupRatio
 	}
+	publicGroupRatio := finalGroupRatio
+	if bc != nil && bc.GroupRatioInfo != nil {
+		finalGroupRatio = bc.GroupRatio
+		publicGroupRatio = bc.GroupRatioInfo.PublicRatio()
+	}
 
 	// 计算 OtherRatios 乘积（视频折扣、时长等）
 	otherMultiplier := 1.0
@@ -427,7 +444,7 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 	reason := common.NewMessage("Recalculated from tokens: tokens {{tokens}}, model ratio {{model_ratio}}, group ratio {{group_ratio}}, other multiplier {{other_multiplier}}", map[string]any{
 		"tokens":           totalTokens,
 		"model_ratio":      fmt.Sprintf("%.2f", modelRatio),
-		"group_ratio":      fmt.Sprintf("%.2f", finalGroupRatio),
+		"group_ratio":      fmt.Sprintf("%.2f", publicGroupRatio),
 		"other_multiplier": fmt.Sprintf("%.4f", otherMultiplier),
 	})
 	RecalculateTaskQuota(ctx, task, actualQuota, reason, clamp)

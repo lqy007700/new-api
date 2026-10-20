@@ -49,6 +49,8 @@ func TestLogOtherRejectsSensitivePublicFields(t *testing.T) {
 	other := NewLogOther()
 
 	for _, key := range []string{
+		"billing_group_ratio",
+		"hidden_group_ratio",
 		"admin_info",
 		"root_info",
 		"audit_info",

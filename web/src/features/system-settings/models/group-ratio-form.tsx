@@ -67,6 +67,7 @@ import {
 
 type GroupFormValues = {
   GroupRatio: string
+  HiddenGroupRatio: string
   TopupGroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
@@ -168,6 +169,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             section={section}
             onSectionChange={setSection}
             groupRatio={values.GroupRatio ?? ''}
+            hiddenGroupRatio={values.HiddenGroupRatio ?? '{}'}
             topupGroupRatio={values.TopupGroupRatio ?? ''}
             userUsableGroups={values.UserUsableGroups ?? ''}
             groupGroupRatio={values.GroupGroupRatio ?? ''}
@@ -249,6 +251,31 @@ export const GroupRatioForm = memo(function GroupRatioForm({
                   <FormDescription>
                     {t(
                       'JSON map of group → ratio applied when the user selects the group explicitly.'
+                    )}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='HiddenGroupRatio'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Hidden ratio')}</FormLabel>
+                  <FormControl>
+                    <JsonCodeEditor
+                      value={field.value}
+                      onChange={field.onChange}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      textareaRef={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t(
+                      'Used for billing only. Leave unset to use the public ratio. Users cannot view this setting.'
                     )}
                   </FormDescription>
                   <FormMessage />
@@ -435,6 +462,17 @@ export const GroupRatioForm = memo(function GroupRatioForm({
               )}
             />
           </SettingsForm>
+        )}
+        {editMode === 'visual' && (
+          <FormField
+            control={form.control}
+            name='HiddenGroupRatio'
+            render={() => (
+              <FormItem>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         )}
       </Form>
     </div>

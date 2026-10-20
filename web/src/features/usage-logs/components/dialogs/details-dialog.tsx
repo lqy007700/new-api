@@ -800,6 +800,15 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {props.isAdmin && other?.admin_info?.billing_group_ratio != null && (
+          <DetailSection label={t('Hidden ratio')}>
+            <DetailRow
+              label={t('Hidden ratio')}
+              value={`${formatRatio(other.admin_info.billing_group_ratio)}x`}
+            />
+          </DetailSection>
+        )}
+
         {/* Quota saturation marker (admin only) */}
         {props.isAdmin && adminInfo?.request_policy?.length ? (
           <DetailSection

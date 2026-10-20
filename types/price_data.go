@@ -11,6 +11,14 @@ type GroupRatioInfo struct {
 	GroupRatio        float64
 	GroupSpecialRatio float64
 	HasSpecialRatio   bool
+	DisplayGroupRatio *float64 `json:",omitempty"`
+}
+
+func (g GroupRatioInfo) PublicRatio() float64 {
+	if g.DisplayGroupRatio != nil {
+		return *g.DisplayGroupRatio
+	}
+	return g.GroupRatio
 }
 
 type PriceData struct {

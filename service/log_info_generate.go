@@ -107,6 +107,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other.SetPublic("cache_ratio", cacheRatio)
 	other.SetPublic("model_price", modelPrice)
 	other.SetPublic("user_group_ratio", userGroupRatio)
+	appendHiddenGroupRatio(other, relayInfo.PriceData.GroupRatioInfo)
 	other.SetPublic("frt", float64(relayInfo.FirstResponseTime.UnixMilli()-relayInfo.StartTime.UnixMilli()))
 	if relayInfo.ReasoningEffort != "" {
 		other.SetPublic("reasoning_effort", relayInfo.ReasoningEffort)
@@ -324,8 +325,19 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData hosttypes.P
 	if priceData.GroupRatioInfo.HasSpecialRatio {
 		other.SetPublic("user_group_ratio", priceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	appendHiddenGroupRatio(other, priceData.GroupRatioInfo)
 	appendRequestPath(nil, relayInfo, other)
 	return other
+}
+
+// Public log metadata contains only the display snapshot. Actual billing
+// multipliers remain in the existing administrator-only projection.
+func appendHiddenGroupRatio(other *model.LogOther, info hosttypes.GroupRatioInfo) {
+	if info.DisplayGroupRatio == nil {
+		return
+	}
+	other.SetPublic("group_ratio", info.PublicRatio())
+	other.SetAdmin("billing_group_ratio", info.GroupRatio)
 }
 
 // InjectTieredBillingInfo overlays tiered billing fields onto an existing
