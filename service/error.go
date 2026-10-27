@@ -149,7 +149,9 @@ func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) 
 	if err != nil {
 		return
 	}
-	if newApiErr.StatusCode == http.StatusOK {
+	// A channel's session conflict must reach the client even when the channel
+	// has a custom status mapping; retrying it cannot restore the session.
+	if newApiErr.StatusCode == http.StatusOK || newApiErr.StatusCode == http.StatusConflict {
 		return
 	}
 	codeStr := strconv.Itoa(newApiErr.StatusCode)

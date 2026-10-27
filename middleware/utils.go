@@ -51,12 +51,12 @@ func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code
 		if statusCode == http.StatusForbidden {
 			statusCode = http.StatusUnauthorized
 		} else if statusCode != http.StatusUnauthorized && statusCode != http.StatusPaymentRequired &&
-			statusCode != http.StatusTooManyRequests && (statusCode < 500 || statusCode > 599) {
+			statusCode != http.StatusConflict && statusCode != http.StatusTooManyRequests && (statusCode < 500 || statusCode > 599) {
 			statusCode = http.StatusInternalServerError
 		}
 	}
 	if statusCode == http.StatusUnauthorized || statusCode == http.StatusPaymentRequired ||
-		statusCode == http.StatusTooManyRequests || statusCode >= 500 {
+		statusCode == http.StatusConflict || statusCode == http.StatusTooManyRequests || statusCode >= 500 {
 		internalCode := types.ErrorCodeBadResponse
 		if len(code) > 0 {
 			internalCode = code[0]

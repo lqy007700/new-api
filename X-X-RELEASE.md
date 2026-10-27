@@ -4,7 +4,7 @@
 
 ## 版本来源
 
-- 唯一版本文件：`common/x_x_version.txt`，本次开发版本为 `v1.0.0-rc.45-x-x.1`，**尚未发布或部署**。
+- 唯一版本文件：`common/x_x_version.txt`，当前修订为 `v1.0.0-rc.45-x-x.3`；发布与生产部署分开执行。
 - `v1.0.0-rc.45` 表示合并的官方 QuantumNous/new-api 基线，`x-x.1` 表示该基线上的第一个 X-X 发布修订。
 - 同一基线再次发布时递增修订号，例如 `v1.0.0-rc.45-x-x.2`；合并新的官方基线后，从该基线的 `x-x.1` 开始。
 - 发布标签固定为 `x-x-custom-` 加完整版本，例如 `x-x-custom-v1.0.0-rc.45-x-x.1`。不重复使用已经发布的版本和标签。
@@ -56,3 +56,10 @@
 - 补齐 3 个 X-X 自定义接口的个人访问令牌路由声明：兑换记录、每日用量、用量补算继续仅允许浏览器会话，不新增 PAT 权限范围；对应路由覆盖和鉴权回归测试通过。认证相关检查参考 OWASP Authentication / Session Management Cheat Sheets，未作全量 ASVS 合规认证。
 - 本地验证：Go 1.26.9 下根模块 `go test ./...`、relaykit 独立 `GOWORK=off go test ./...` 与 `go build ./...` 通过；前端 75 个测试文件、1228 项测试通过，用量工具另用 `bun test` 通过 4 项；类型检查与生产构建通过。按项目 shadcn-ui 约定复用原组件，未新增替代 UI。
 - 验证边界：`go test ./model -run '^TestChannelPriorityDatabaseMatrix$' -v` 的 SQLite 3.50.4 测试通过；本机未配置 `TEST_MYSQL_DSN` / `TEST_POSTGRES_DSN`，相应数据库测试跳过，**尚未完成三数据库迁移兼容矩阵**。本次涉及前端文件的 lint 无错误，改动的两处定价工具代码格式检查通过；全库 lint 仍有 156 个位于未改文件的存量错误，不在同步官方版本时批量改写。
+
+## rc.45-x-x.3（2026-10-27）
+
+- 常规模型 API 收到渠道 HTTP 409 时，对客户端保留 409，统一重新包装为 `type=session_error`、`code=session_unavailable` 和“当前会话已不可用，请新建会话后重试。”，附带本平台请求 ID。Claude 协议使用 `type=session_error` 和相同文案。
+- 不透传渠道原始 message、type、code、param 或 metadata；原始错误继续保留在内部诊断对象中。
+- 409 不自动重试或换渠道，即使重试范围包含 409、渠道错误码以 `channel:` 开头也不重试；渠道状态码映射不能将收到的 409 改成其他状态。
+- 本次发布 linux/amd64 镜像归档及 SHA256，生产部署仍需另行执行。

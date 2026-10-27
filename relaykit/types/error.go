@@ -101,6 +101,7 @@ type NewAPIError struct {
 const (
 	ClientErrorMessageUnauthorized = "Token 无效或无权限：核对 Token，以及 Token 的可用模型和分组设置。"
 	ClientErrorMessageQuota        = "余额不足：前往控制台“钱包”充值后重试。"
+	ClientErrorMessageSession      = "当前会话已不可用，请新建会话后重试。"
 	ClientErrorMessageRateLimit    = "请求频率超过限制：降低请求频率并采用退避策略重试；持续出现时请联系我们。"
 	ClientErrorMessageServer       = "服务或上游临时异常：携带响应中的请求 ID 联系客服，以便快速定位。"
 )
@@ -259,6 +260,9 @@ func (e *NewAPIError) ClientStatusCode() int {
 	if e == nil {
 		return http.StatusInternalServerError
 	}
+	if e.StatusCode == http.StatusConflict {
+		return http.StatusConflict
+	}
 
 	switch e.errorCode {
 	case ErrorCodeInsufficientUserQuota, ErrorCodePreConsumeTokenQuotaFailed:
@@ -283,6 +287,8 @@ func clientErrorMessage(statusCode int) string {
 		return ClientErrorMessageUnauthorized
 	case http.StatusPaymentRequired:
 		return ClientErrorMessageQuota
+	case http.StatusConflict:
+		return ClientErrorMessageSession
 	case http.StatusTooManyRequests:
 		return ClientErrorMessageRateLimit
 	default:
@@ -309,6 +315,8 @@ func (e *NewAPIError) ToClientOpenAIError(requestID string) OpenAIError {
 		typeName, code = "authentication_error", "invalid_api_key"
 	case http.StatusPaymentRequired:
 		typeName, code = "insufficient_quota", "insufficient_quota"
+	case http.StatusConflict:
+		typeName, code = "session_error", "session_unavailable"
 	case http.StatusTooManyRequests:
 		typeName, code = "rate_limit_error", "rate_limit_exceeded"
 	}
@@ -328,6 +336,8 @@ func (e *NewAPIError) ToClientClaudeError(requestID string) ClaudeError {
 		typeName = "authentication_error"
 	case http.StatusPaymentRequired:
 		typeName = "billing_error"
+	case http.StatusConflict:
+		typeName = "session_error"
 	case http.StatusTooManyRequests:
 		typeName = "rate_limit_error"
 	}
