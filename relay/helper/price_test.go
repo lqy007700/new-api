@@ -860,3 +860,5 @@ func TestHiddenGroupRatioPricing(t *testing.T) {
 	assert.Nil(t, info.DisplayGroupRatio)
 	assert.Equal(t, 1.0, ratio_setting.ResolveBillingGroupRatio("default", "default").GroupRatio)
 }
+
+func (s *priceTestReservation) ReserveBeforeSubmit(quota int) error { return s.Reserve(quota) }

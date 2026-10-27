@@ -64,7 +64,7 @@ export function parseSystemVersion(
     ?.trim()
     .replace(/^x-x-custom-/, '')
     .match(
-      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:-x-x\.([1-9]\d*))?(?:\+[\da-zA-Z.-]+)?$/
+      /^v?(\d+(?:\.\d+){2,})(?:-(alpha|beta|rc|patch)(?:\.(\d+))?(?:-i18nfix\.(\d+))?)?(?:(?:-x-x\.([1-9]\d*))(?:\+[\da-zA-Z.-]+)?|\+lqy007700\+v([1-9]\d*)|\+[\da-zA-Z.-]+)?$/
     )
   if (!match || (match[4] && match[2] !== 'rc')) return null
 
@@ -76,7 +76,7 @@ export function parseSystemVersion(
     stage: releaseStages[match[2] ?? 'stable'],
     sequence: BigInt(match[3] ?? '0'),
     revision: BigInt(match[4] ?? '0'),
-    customRevision: BigInt(match[5] ?? '0'),
+    customRevision: BigInt(match[5] ?? match[6] ?? '0'),
   }
 }
 
@@ -140,7 +140,10 @@ export function selectLatestXXRelease(payload: unknown): SystemRelease | null {
       const release = parsed.data
       const version = parseSystemVersion(release.tag_name)
       if (
-        !release.tag_name.startsWith(XX_RELEASE_TAG_PREFIX) ||
+        !(
+          release.tag_name.startsWith(XX_RELEASE_TAG_PREFIX) ||
+          release.tag_name.includes('+lqy007700+v')
+        ) ||
         !version?.customRevision
       ) {
         return false
@@ -157,6 +160,10 @@ export function selectLatestXXRelease(payload: unknown): SystemRelease | null {
 }
 
 export function formatXXVersionLabel(value: string): string {
+  const custom = value.match(
+    /^(v?\d+(?:\.\d+){2,})(?:-((?:alpha|beta|rc|patch)\.\d+(?:-i18nfix\.\d+)?))?\+lqy007700\+v([1-9]\d*)$/
+  )
+  if (custom) return `X-X ${custom[2] || custom[1]} · v${custom[3]}`
   const match = value.match(
     /^v?(\d+(?:\.\d+){2,})(?:-((?:alpha|beta|rc|patch)\.\d+(?:-i18nfix\.\d+)?))?-x-x\.([1-9]\d*)(?:\+[\da-zA-Z.-]+)?$/
   )

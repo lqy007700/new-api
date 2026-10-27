@@ -6,6 +6,7 @@ on:
       - '*'
       - '!nightly*'
       - '!x-x-custom-*'
+      - '!v*\+lqy007700\+v*'
   workflow_dispatch:
     inputs:
       tag:

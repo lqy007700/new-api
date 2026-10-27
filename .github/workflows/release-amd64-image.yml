@@ -4,10 +4,11 @@ on:
   push:
     tags:
       - 'x-x-custom-*'
+      - 'v*\+lqy007700\+v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Existing tag matching common/x_x_version.txt (for example x-x-custom-v1.0.0-rc.44-x-x.1)'
+        description: 'Existing tag matching common/x_x_version.txt (for example v1.0.0-rc.47+lqy007700+v1)'
         required: true
         type: string
 

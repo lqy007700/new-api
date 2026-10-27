@@ -53,6 +53,14 @@ describe('system release ordering', () => {
     ['v1.0.0-rc.44-x-x.2+abc1234', 'v1.0.0-rc.44-x-x.2', 0],
     ['v1.0.0-x-x.1', 'v1.0.0-rc.99-x-x.8', 1],
     ['v1.0.0-rc.44-x-x.6a2f7d1ce4e', 'v1.0.0-rc.44-x-x.1', null],
+    ['v1.0.0-rc.47+lqy007700+v2', 'v1.0.0-rc.47+lqy007700+v10', -1],
+    ['v1.0.0-rc.47+lqy007700+v99', 'v1.0.0-rc.48+lqy007700+v1', -1],
+    ['v1.0.0-rc.45-x-x.3', 'v1.0.0-rc.47+lqy007700+v1', -1],
+    ['x-x-custom-v1.0.0-rc.47-x-x.2', 'v1.0.0-rc.47+lqy007700+v2', 0],
+    ['v1.0.0-rc.47+lqy007700+v0', 'v1.0.0-rc.47+lqy007700+v1', null],
+    ['v1.0.0-rc.47+lqy007700+v01', 'v1.0.0-rc.47+lqy007700+v1', null],
+    ['v1.0.0-rc.47+lqy007700+v1junk', 'v1.0.0-rc.47+lqy007700+v1', null],
+    ['v1.0.0-rc.47+lqy007700+v1', 'v1.0.0-rc.47+lqy007700+v1', 0],
   ])('compares %s against %s as %s', (current, latest, expected) => {
     expect(compareSystemVersions(current, latest)).toBe(expected)
   })
@@ -85,7 +93,9 @@ describe('system release ordering', () => {
 
 describe('X-X published image releases', () => {
   function imageRelease(version: string) {
-    const tag = `x-x-custom-${version}`
+    const tag = version.includes('+lqy007700+v')
+      ? version
+      : `x-x-custom-${version}`
     const archive = `new-api-x-x-${tag}-linux-amd64.tar.gz`
     return {
       tag_name: tag,
@@ -123,6 +133,26 @@ describe('X-X published image releases', () => {
         { tag_name: 'v2.0.0', draft: false, prerelease: false },
       ])
     ).toBeNull()
+  })
+
+  test('selects a complete new-format release alongside legacy releases', () => {
+    const incomplete = imageRelease('v1.0.0-rc.48+lqy007700+v1')
+    incomplete.assets.pop()
+    const ready = imageRelease('v1.0.0-rc.47+lqy007700+v10')
+    expect(
+      selectLatestXXRelease([
+        imageRelease('v1.0.0-rc.45-x-x.3'),
+        imageRelease('v1.0.0-rc.47+lqy007700+v2'),
+        incomplete,
+        ready,
+      ])?.tag_name
+    ).toBe(ready.tag_name)
+    expect(formatXXVersionLabel('v1.0.0-rc.47+lqy007700+v1')).toBe(
+      'X-X rc.47 · v1'
+    )
+    expect(getSystemReleaseUrl(ready, 'x-x')).toBe(
+      'https://github.com/lqy007700/new-api/releases/tag/v1.0.0-rc.47%2Blqy007700%2Bv10'
+    )
   })
 
   test('compares release tags and running build versions using the same numeric revision', () => {

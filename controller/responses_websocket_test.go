@@ -941,10 +941,12 @@ func TestResponsesStreamOutcomesPreserveAccounting(t *testing.T) {
 					require.NoError(t, err)
 					require.NoError(t, response.Body.Close())
 					assert.Equal(t, http.StatusOK, response.StatusCode)
-					if strings.HasPrefix(terminal, `{"type":"response.failed",`) {
+					if strings.HasPrefix(terminal, `{"type":"response.failed",`) || strings.HasPrefix(terminal, `{"type":"error",`) {
 						assert.Contains(t, string(body), types.ClientErrorMessageServer)
 						assert.Contains(t, string(body), "request id: responses-http-billing")
 						assert.NotContains(t, string(body), "sensitive upstream detail")
+						assert.NotContains(t, string(body), "Internal server error")
+						assert.NotContains(t, string(body), "Input too long")
 					} else {
 						assert.Contains(t, string(body), terminal)
 					}

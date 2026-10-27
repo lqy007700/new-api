@@ -23,7 +23,10 @@ type XXBuildMetadata struct {
 
 func GetXXBuildMetadata() XXBuildMetadata {
 	version := strings.TrimSpace(xxVersion)
-	upstream, _, _ := strings.Cut(version, "-x-x.")
+	upstream, _, custom := strings.Cut(version, "+lqy007700+v")
+	if !custom {
+		upstream, _, _ = strings.Cut(version, "-x-x.")
+	}
 	commit := XXBuildCommit
 	if commit == "" {
 		if info, ok := debug.ReadBuildInfo(); ok {

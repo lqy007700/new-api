@@ -90,14 +90,31 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 		// Keep authoritative usage and outcome details before sanitizing the client event.
 		accumulator.Observe(&streamResponse, common.StringToByteSlice(data))
-		if streamResponse.Type == "response.error" || streamResponse.Type == "response.failed" {
+		var responseStatus string
+		if streamResponse.Response != nil {
+			_ = common.Unmarshal(streamResponse.Response.Status, &responseStatus)
+		}
+		if streamResponse.Type == "error" || streamResponse.Type == "response.error" || streamResponse.Type == "response.failed" || responseStatus == "failed" {
 			// Do not forward provider diagnostics or routing details in user-facing logs.
 			streamErr := types.NewError(
 				errors.New("upstream responses stream error"),
 				types.ErrorCodeBadResponse,
 			)
-			streamResponse.Response = &dto.OpenAIResponsesResponse{
-				Error: streamErr.ToClientOpenAIError(requestID),
+			clientError := streamErr.ToClientOpenAIError(requestID)
+			// Rebuild the entire event: top-level message/code/param and other
+			// provider-controlled fields can contain the same private details.
+			streamResponse = dto.ResponsesStreamResponse{
+				Type:           streamResponse.Type,
+				SequenceNumber: streamResponse.SequenceNumber,
+			}
+			if streamResponse.Type == "error" {
+				streamResponse.Code = "server_error"
+				streamResponse.Message = clientError.Message
+			} else {
+				streamResponse.Response = &dto.OpenAIResponsesResponse{
+					Status: []byte(`"failed"`),
+					Error:  clientError,
+				}
 			}
 			sanitized, marshalErr := common.Marshal(streamResponse)
 			if marshalErr != nil {
@@ -109,7 +126,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
+			sr.Stop(err)
+			return
+		}
+		if (streamResponse.Type == "response.completed" || streamResponse.Type == "response.done") &&
+			streamResponse.Response != nil && info.StreamStatus.ResponseOutcome() == string(relaycommon.ResponseOutcomeCompleted) {
+			sr.Done()
+		}
 	})
 
 	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)
