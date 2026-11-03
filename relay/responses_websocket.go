@@ -111,15 +111,19 @@ type responsesWSSession struct {
 	clientWriteBudget helper.StreamWriteBudget
 
 	// These fields belong to the serial request worker and describe the actual
-	// established connection. Per-request token/user data is never stored here.
-	lastResponseID  string
-	lockedModel     string
-	lockedChannelID int
-	lockedGroup     string
-	lockedKey       string
-	lockedKeyIndex  int
-	lockedContext   map[appconstant.ContextKey]any
-	lockedRoute     dto.AdvancedCustomRoute
+	// established connection. Only the immutable identity asserted during the
+	// handshake is retained; per-round authentication and billing stay fresh.
+	lastResponseID           string
+	lockedModel              string
+	lockedChannelID          int
+	lockedGroup              string
+	lockedKey                string
+	lockedCPRIdentityEnabled bool
+	lockedUserID             int
+	lockedTokenID            int
+	lockedKeyIndex           int
+	lockedContext            map[appconstant.ContextKey]any
+	lockedRoute              dto.AdvancedCustomRoute
 }
 
 func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner ResponsesWSRequestRunner) *types.NewAPIError {
@@ -346,6 +350,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			}
 			s.lockedModel, s.lockedChannelID, s.lockedGroup = modelName, channel.Id, info.UsingGroup
 			s.lockedKey, s.lockedKeyIndex = info.ApiKey, info.ChannelMultiKeyIndex
+			s.lockedCPRIdentityEnabled = info.ChannelSetting.CPRIdentityForwardingEnabled
+			s.lockedUserID, s.lockedTokenID = info.UserId, info.TokenId
 			s.lockedRoute, _ = channel.GetOtherSettings().AdvancedCustom.MatchPathForModel(c.Request.URL.Path, modelName)
 			s.lockedContext = make(map[appconstant.ContextKey]any)
 			for _, key := range []appconstant.ContextKey{
@@ -553,6 +559,11 @@ func (s *responsesWSSession) restoreConnectionContext(c *gin.Context, model stri
 	channel, err := appmodel.CacheGetChannel(s.lockedChannelID)
 	if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled || !channel.GetSetting().ResponsesWebSocketEnabled {
 		return types.NewErrorWithStatusCode(errors.New("Responses WebSocket is disabled for this channel"), types.ErrorCode(appdto.FilterResponsesWebSocket), http.StatusForbidden, types.ErrOptionWithSkipRetry())
+	}
+	identityEnabled := channel.GetSetting().CPRIdentityForwardingEnabled
+	if (s.lockedCPRIdentityEnabled || identityEnabled) &&
+		(s.lockedCPRIdentityEnabled != identityEnabled || s.lockedUserID != common.GetContextKeyInt(c, appconstant.ContextKeyUserId) || s.lockedTokenID != common.GetContextKeyInt(c, appconstant.ContextKeyTokenId)) {
+		return types.NewErrorWithStatusCode(errors.New(i18n.T(c, i18n.MsgCPRIdentityReconnect)), types.ErrorCodeAccessDenied, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 	}
 	keyEnabled := channel.Key == s.lockedKey
 	if channel.ChannelInfo.IsMultiKey {

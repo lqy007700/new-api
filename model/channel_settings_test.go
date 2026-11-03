@@ -143,6 +143,36 @@ func TestInferencePresetSettingsAndDatabaseRoundTrip(t *testing.T) {
 				require.NoError(t, db.Raw("select version()").Scan(&version).Error)
 			}
 			t.Logf("%s version: %s", dialect, version)
+			t.Run("CPR identity settings", func(t *testing.T) {
+				channel := &Channel{Type: constant.ChannelTypeOpenAI, Name: "cpr-config", Key: "shared", Status: common.ChannelStatusEnabled}
+				legacy := `{"proxy":"","system_prompt":"keep this prompt","responses_websocket_enabled":true}`
+				channel.Setting = &legacy
+				require.NoError(t, table.Create(channel).Error)
+				for _, enabled := range []bool{false, true, false} {
+					var loaded Channel
+					require.NoError(t, table.First(&loaded, channel.Id).Error)
+					setting := loaded.GetSetting()
+					assert.Equal(t, "keep this prompt", setting.SystemPrompt)
+					assert.True(t, setting.ResponsesWebSocketEnabled)
+					setting.CPRIdentityForwardingEnabled = enabled
+					loaded.SetSetting(setting)
+					require.NoError(t, loaded.ValidateSettings())
+					require.NoError(t, table.Save(&loaded).Error)
+					// The new flag uses the existing TEXT JSON; repeated startup keeps it intact.
+					for range 2 {
+						require.NoError(t, table.AutoMigrate(&Channel{}))
+						var reloaded Channel
+						require.NoError(t, table.First(&reloaded, channel.Id).Error)
+						assert.Equal(t, enabled, reloaded.GetSetting().CPRIdentityForwardingEnabled)
+						assert.Equal(t, "keep this prompt", reloaded.GetSetting().SystemPrompt)
+						assert.True(t, reloaded.GetSetting().ResponsesWebSocketEnabled)
+						if !enabled {
+							assert.NotContains(t, *reloaded.Setting, "cpr_identity_forwarding_enabled")
+						}
+					}
+				}
+			})
+
 			for _, channelType := range []int{constant.ChannelTypeVLLM, constant.ChannelTypeSGLang} {
 				t.Run(fmt.Sprint(channelType), func(t *testing.T) {
 					channel := &Channel{Type: channelType, Key: "EMPTY", Name: "inference", Status: common.ChannelStatusEnabled}
@@ -193,5 +223,18 @@ func TestInferencePresetSettingsAndDatabaseRoundTrip(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestChannelCPRIdentityRequiresOpenAICompatibleType(t *testing.T) {
+	for _, channelType := range []int{constant.ChannelTypeOpenAI, constant.ChannelTypeCodex, constant.ChannelTypeAnthropic, constant.ChannelTypeNewAPI} {
+		channel := &Channel{Type: channelType}
+		channel.SetSetting(dto.ChannelSettings{CPRIdentityForwardingEnabled: true})
+		err := channel.ValidateSettings()
+		if channelType == constant.ChannelTypeOpenAI {
+			require.NoError(t, err)
+		} else {
+			require.ErrorContains(t, err, "CPR identity forwarding")
+		}
 	}
 }

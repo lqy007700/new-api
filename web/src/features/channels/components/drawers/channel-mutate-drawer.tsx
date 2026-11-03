@@ -210,6 +210,7 @@ import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelQuickOptions } from '../channel-quick-options'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
+import { CPRIdentitySetting } from '../cpr-identity-setting'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { ConfigureModelsDialog } from '../dialogs/configure-models-dialog'
 import {
@@ -303,6 +304,7 @@ const SENSITIVE_FORM_FIELDS = [
   'http2_connection_shards',
   'tls_insecure_skip_verify',
   'pass_through_body_enabled',
+  'cpr_identity_forwarding_enabled',
   'responses_websocket_enabled',
   'system_prompt',
   'system_prompt_override',
@@ -4751,6 +4753,10 @@ export function ChannelMutateDrawer({
                 disabled={sensitiveLocked}
                 className='space-y-4 disabled:opacity-60'
               >
+                <CPRIdentitySetting
+                  channelType={currentType}
+                  disabled={sensitiveLocked || isSubmitting}
+                />
                 <ResponsesWebSocketSetting
                   channelType={currentType}
                   disabled={sensitiveLocked || isSubmitting}

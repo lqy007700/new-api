@@ -1230,6 +1230,9 @@ func UpdateChannel(c *gin.Context) {
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
 	}
+	if settingProvided && originChannel.GetSetting().CPRIdentityForwardingEnabled != channel.GetSetting().CPRIdentityForwardingEnabled {
+		service.CloseActiveWebSocketsForChannels([]int{channel.Id}, "CPR identity forwarding changed; reconnect required")
+	}
 	// 记录变更的字段名（语言无关的字段标识），密钥仅记录"已更换"绝不记录内容。
 	changedFields := make([]string, 0)
 	if channel.Models != originChannel.Models {

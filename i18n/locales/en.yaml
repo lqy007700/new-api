@@ -91,3 +91,6 @@ channel.upstream_update_added_models: "Added model examples (showing {{.Shown}}/
 channel.upstream_update_removed_models: "Removed model examples (showing {{.Shown}}/{{.Total}}): {{.Models}}"
 channel.upstream_update_failed_channels: "Failed channel IDs (showing {{.Shown}}/{{.Total}}): {{.Ids}}"
 channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
+cpr.identity_requires_token: "CPR identity forwarding requires an authenticated API token; use an API key instead of Playground"
+cpr.identity_requires_openai: "CPR identity forwarding requires an OpenAI-compatible channel (type 1)"
+cpr.identity_reconnect: "CPR connection identity changed; reconnect required"

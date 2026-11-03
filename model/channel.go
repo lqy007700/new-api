@@ -1001,6 +1001,9 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if channelParams.CPRIdentityForwardingEnabled && channel.Type != constant.ChannelTypeOpenAI {
+		return fmt.Errorf("CPR identity forwarding requires an OpenAI-compatible channel (type 1)")
+	}
 	if _, err := common.ParseProxyURLStrict(channelParams.Proxy); err != nil {
 		return fmt.Errorf("invalid channel proxy: %w", err)
 	}

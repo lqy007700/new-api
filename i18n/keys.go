@@ -6,6 +6,10 @@ package i18n
 
 // Errors returned to AI clients
 const (
+	MsgCPRIdentityRequiresToken  = "cpr.identity_requires_token"
+	MsgCPRIdentityRequiresOpenAI = "cpr.identity_requires_openai"
+	MsgCPRIdentityReconnect      = "cpr.identity_reconnect"
+
 	MsgDatabaseError          = "common.database_error"
 	MsgAuthUserBanned         = "auth.user_banned"
 	MsgTokenGetInfoFailed     = "token.get_info_failed"

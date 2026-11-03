@@ -70,6 +70,12 @@ var codexCliPassThroughHeaders = []string{
 	"X-OpenAI-Internal-Codex-Responses-Lite",
 }
 
+// CodexCLIRequestHeaders returns a copy of the native session and turn header
+// allowlist. CPR identity forwarding uses it independently of affinity rules.
+func CodexCLIRequestHeaders() []string {
+	return append([]string(nil), codexCliPassThroughHeaders...)
+}
+
 var claudeCliPassThroughHeaders = []string{
 	"X-Stainless-Arch",
 	"X-Stainless-Lang",

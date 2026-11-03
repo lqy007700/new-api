@@ -691,3 +691,47 @@ func TestResponsesWSErrorAttribution(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreConnectionContextGuardsCPRIdentity(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	database := setupRelayChannelDB(t)
+	baseURL := "http://upstream.example"
+	ch := &model.Channel{Name: "cpr", Key: "shared", Status: common.ChannelStatusEnabled, Type: constant.ChannelTypeOpenAI, BaseURL: &baseURL}
+	require.NoError(t, database.Create(ch).Error)
+	for _, tc := range []struct {
+		name            string
+		before, after   bool
+		userID, tokenID int
+		reject          bool
+	}{
+		{"same identity", true, true, 1, 11, false},
+		{"different token same user", true, true, 1, 12, true},
+		{"different user", true, true, 2, 21, true},
+		{"disable", true, false, 1, 11, true},
+		{"enable", false, true, 1, 11, true},
+		{"ordinary channel unchanged", false, false, 2, 21, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch.SetSetting(dto.ChannelSettings{ResponsesWebSocketEnabled: true, CPRIdentityForwardingEnabled: tc.after})
+			require.NoError(t, database.Model(ch).Update("setting", ch.Setting).Error)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			c.Set(string(constant.ContextKeyUserId), tc.userID)
+			c.Set(string(constant.ContextKeyTokenId), tc.tokenID)
+			c.Set(string(constant.ContextKeyUserSetting), dto.UserSetting{Language: "en"})
+			service.GetChannelConstraints(c).AddPin(appdto.ChannelPin{ChannelId: ch.Id, Source: appdto.PinSourceToken, Rank: appdto.PinRankToken, RetryMode: appdto.PinRetrySingleAttempt})
+			s := &responsesWSSession{lockedChannelID: ch.Id, lockedKey: "shared", lockedCPRIdentityEnabled: tc.before, lockedUserID: 1, lockedTokenID: 11,
+				lockedContext: map[constant.ContextKey]any{constant.ContextKeyChannelBaseUrl: ch.GetBaseURL(), constant.ContextKeyChannelHeaderOverride: ch.GetHeaderOverride()}}
+			apiErr := s.restoreConnectionContext(c, "model")
+			if tc.reject {
+				require.NotNil(t, apiErr)
+				assert.Equal(t, http.StatusForbidden, apiErr.StatusCode)
+				assert.ErrorContains(t, apiErr, "reconnect required")
+			} else {
+				require.Nil(t, apiErr)
+			}
+			assert.Equal(t, tc.userID, c.GetInt(string(constant.ContextKeyUserId)), "restoring channel state must not replace this round's authenticated user")
+			assert.Equal(t, tc.tokenID, c.GetInt(string(constant.ContextKeyTokenId)))
+		})
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -417,7 +418,7 @@ func newResponsesWSBillingTest(t *testing.T, expression string, handle func(*web
 	gateway := httptest.NewServer(engine)
 	fixture.gatewayURL = gateway.URL
 	t.Cleanup(gateway.Close)
-	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(gateway.URL, "http")+"/v1/responses", http.Header{"Authorization": []string{"Bearer sk-" + token.Key}})
+	client, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(gateway.URL, "http")+"/v1/responses", http.Header{"Authorization": []string{"Bearer sk-" + token.Key}, "X-CPR-User-Id": []string{"client-spoof"}, "X-CPR-Token-Id": []string{"client-spoof"}, "Session_id": []string{"native-session"}})
 	require.NoError(t, err)
 	fixture.client = client
 	t.Cleanup(func() { fixture.closeAndWait(t) })
@@ -529,6 +530,9 @@ func assertResponsesWSAccounting(t *testing.T, fixture *responsesWSBillingTest, 
 
 func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 	type upstreamRequest struct {
+		UserID             string
+		TokenID            string
+		SessionID          string
 		Authorization      string
 		Type               string `json:"type"`
 		Model              string `json:"model"`
@@ -547,6 +551,9 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 				return
 			}
 			event.Authorization = r.Header.Get("Authorization")
+			event.UserID = r.Header.Get("X-CPR-User-Id")
+			event.TokenID = r.Header.Get("X-CPR-Token-Id")
+			event.SessionID = r.Header.Get("Session_id")
 			received <- event
 			if index == 2 {
 				duplicate := `{"type":"response.completed","response":{"id":"resp_1","status":"completed","usage":{"input_tokens":1000,"output_tokens":10,"total_tokens":1010}}}`
@@ -561,6 +568,10 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 		}
 	})
 	client, user, token := fixture.client, fixture.user, fixture.token
+	fixture.channel.SetSetting(dto.ChannelSettings{ResponsesWebSocketEnabled: true, CPRIdentityForwardingEnabled: true})
+	fixture.channel.HeaderOverride = common.GetPointer(`{"Authorization":"Bearer spoof", "X-CPR-User-Id":"spoof", "X-CPR-Token-Id":"spoof"}`)
+	require.NoError(t, model.DB.Model(fixture.channel).Updates(map[string]any{"setting": fixture.channel.Setting, "header_override": fixture.channel.HeaderOverride}).Error)
+	model.InitChannelCache()
 
 	for index, payload := range []string{
 		`{"type":"response.create","model":"ws-billing","input":"first","service_tier":"default"}`,
@@ -581,6 +592,9 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 		assert.Equal(t, fmt.Sprintf("resp_%d", index+1), terminal.Response.ID)
 		observed := <-received
 		assert.Equal(t, "Bearer upstream-first", observed.Authorization)
+		assert.Equal(t, strconv.Itoa(user.Id), observed.UserID)
+		assert.Equal(t, strconv.Itoa(token.Id), observed.TokenID)
+		assert.Equal(t, "native-session", observed.SessionID)
 		assert.Equal(t, "gpt-4o", observed.Model)
 		assert.Equal(t, "response.create", observed.Type)
 		if index == 0 {

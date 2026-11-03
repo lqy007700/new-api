@@ -92,3 +92,6 @@ channel.upstream_update_added_models: "新增模型示例（展示 {{.Shown}}/{{
 channel.upstream_update_removed_models: "删除模型示例（展示 {{.Shown}}/{{.Total}}）：{{.Models}}"
 channel.upstream_update_failed_channels: "失败渠道 ID（展示 {{.Shown}}/{{.Total}}）：{{.Ids}}"
 channel.upstream_update_more_omitted: "（其余 {{.Count}} 个已省略）"
+cpr.identity_requires_token: "CPR 身份传递需要已认证的 API 令牌，请使用 API Key，暂不支持操练场"
+cpr.identity_requires_openai: "CPR 身份传递需要 OpenAI 兼容渠道（类型 1）"
+cpr.identity_reconnect: "CPR 连接身份已变化，请重新连接"

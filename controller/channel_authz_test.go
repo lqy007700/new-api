@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/wsmanager"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +39,12 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 			"models": updated.Models,
 			"group":  updated.Group,
 		}))
+	})
+
+	t.Run("CPR identity forwarding requires sensitive permission", func(t *testing.T) {
+		updated := PatchChannel{Channel: *origin}
+		updated.Setting = common.GetPointer(`{"cpr_identity_forwarding_enabled":true}`)
+		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"setting": *updated.Setting}))
 	})
 
 	t.Run("key change", func(t *testing.T) {
@@ -201,4 +210,49 @@ func TestChannelFieldsAreClassified(t *testing.T) {
 		assert.Truef(t, classified(name),
 			"channel field %q is not classified; add it to channelSensitiveFields, channelNonSensitiveFields, channelOperationalFields, or channelReadOnlyFields in channel_authz.go", name)
 	}
+}
+
+func TestCPRIdentitySettingClosesOnlyAffectedChannelConnections(t *testing.T) {
+	setupTaskPluginBindChannelTest(t)
+	previousCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = previousCache })
+	channel := &model.Channel{Type: constant.ChannelTypeOpenAI, Name: "cpr", Key: "shared", Models: "gpt-4o", Group: "default", Status: common.ChannelStatusEnabled}
+	require.NoError(t, channel.Insert())
+	other := &model.Channel{Type: constant.ChannelTypeOpenAI, Name: "ordinary", Key: "other", Models: "gpt-4o", Group: "default", Status: common.ChannelStatusEnabled}
+	require.NoError(t, other.Insert())
+	closed := make(chan string, 2)
+	unrelatedClosed := make(chan string, 1)
+	unregister := wsmanager.Register(channel.Id, wsmanager.KindResponses, func(reason string) { closed <- reason })
+	defer unregister()
+	unregisterOther := wsmanager.Register(other.Id, wsmanager.KindResponses, func(reason string) { unrelatedClosed <- reason })
+	defer unregisterOther()
+	update := func(enabled bool, userID, role int) *httptest.ResponseRecorder {
+		settings := dto.ChannelSettings{CPRIdentityForwardingEnabled: enabled}
+		channel.SetSetting(settings)
+		data, err := common.Marshal(map[string]any{"id": channel.Id, "type": channel.Type, "name": channel.Name, "models": channel.Models, "group": channel.Group, "setting": *channel.Setting})
+		require.NoError(t, err)
+		return putUpdateChannel(t, userID, role, string(data))
+	}
+	// Insufficient permission must not save the flag or disconnect traffic.
+	denied := update(true, 2, common.RoleAdminUser)
+	require.Contains(t, denied.Body.String(), `"success":false`)
+	assert.Empty(t, closed)
+	persisted, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	assert.False(t, persisted.GetSetting().CPRIdentityForwardingEnabled)
+	// Off -> off keeps connections. Off -> on closes exactly this channel.
+	require.Contains(t, update(false, 1, common.RoleRootUser).Body.String(), `"success":true`)
+	assert.Empty(t, closed)
+	require.Contains(t, update(true, 1, common.RoleRootUser).Body.String(), `"success":true`)
+	require.Len(t, closed, 1)
+	assert.Contains(t, <-closed, "reconnect required")
+	unregister = wsmanager.Register(channel.Id, wsmanager.KindResponses, func(reason string) { closed <- reason })
+	defer unregister()
+	require.Contains(t, update(true, 1, common.RoleRootUser).Body.String(), `"success":true`)
+	assert.Empty(t, closed)
+	require.Contains(t, update(false, 1, common.RoleRootUser).Body.String(), `"success":true`)
+	require.Len(t, closed, 1)
+	assert.Contains(t, <-closed, "reconnect required")
+	assert.Empty(t, unrelatedClosed)
 }
