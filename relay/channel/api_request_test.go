@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -240,6 +241,8 @@ func (cprHeaderTestAdaptor) SetupRequestHeader(_ *gin.Context, headers *http.Hea
 	headers.Set("Authorization", "Bearer adaptor-key")
 	(*headers)["x-cpr-user-id"] = []string{"adaptor-forgery", "duplicate"}
 	(*headers)["X-CPR-Token-ID"] = []string{"adaptor-forgery"}
+	(*headers)["x-CpR-ToKeN-nAmE"] = []string{"adaptor-forgery", "duplicate"}
+	(*headers)["X-CPR-Token-Name"] = []string{"second-forgery"}
 	return nil
 }
 
@@ -270,9 +273,10 @@ func TestCPRIdentityOnHTTPAndWebSocketWire(t *testing.T) {
 					c.Request.Header.Set("Sec-WebSocket-Protocol", "realtime, openai-insecure-api-key.private-user-key")
 					c.Request.Header.Set("X-CPR-User-Id", "spoof-user")
 					c.Request.Header.Set("X-CPR-Token-Id", "spoof-token")
+					c.Request.Header.Set("X-CPR-Token-Name", "spoof-name")
 					c.Request.Header.Set("Session_id", "native-session")
 					c.Request.Header.Set("X-Codex-Turn-State", "native-turn")
-					info := &relaycommon.RelayInfo{UserId: 42, TokenId: 77, TokenKey: "private-user-key", IsStream: transport == "sse",
+					info := &relaycommon.RelayInfo{UserId: 42, TokenId: 77, TokenKey: "private-user-key", TokenName: "工作 Key+1", IsStream: transport == "sse",
 						ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, ChannelBaseUrl: upstream.URL, ApiKey: "shared-cpr-key",
 							ChannelSetting:  dto.ChannelSettings{CPRIdentityForwardingEnabled: enabled},
 							HeadersOverride: map[string]any{"Authorization": "Bearer override-key", "X-Trace": "preserved", "X-Api-Key": "{client_header:Authorization}"}}}
@@ -280,19 +284,23 @@ func TestCPRIdentityOnHTTPAndWebSocketWire(t *testing.T) {
 					case "static":
 						info.HeadersOverride["X-CPR-User-Id"] = "static-spoof"
 						info.HeadersOverride["X-CPR-Token-Id"] = "static-spoof"
+						info.HeadersOverride["X-CPR-Token-Name"] = "static-spoof"
 					case "wildcard":
 						info.HeadersOverride["*"] = ""
 					case "regex":
 						info.HeadersOverride["regex:.*"] = ""
 					case "placeholder":
 						info.HeadersOverride["X-CPR-User-Id"] = "{client_header:X-CPR-User-Id}"
+						info.HeadersOverride["X-CPR-Token-Name"] = "{client_header:X-CPR-Token-Name}"
 						info.HeadersOverride["Authorization"] = "{client_header:Authorization}"
 					case "operations":
-						info.RequestHeaders = map[string]string{"X-CPR-User-Id": "spoof-user", "X-CPR-Token-Id": "spoof-token", "X-User-Authorization": "Bearer private-user-key"}
+						info.RequestHeaders = map[string]string{"X-CPR-User-Id": "spoof-user", "X-CPR-Token-Id": "spoof-token", "X-CPR-Token-Name": "spoof-name", "X-User-Authorization": "Bearer private-user-key"}
 						info.ParamOverride = map[string]any{"operations": []any{
-							map[string]any{"mode": "pass_headers", "value": []any{"X-CPR-User-Id", "X-CPR-Token-Id"}},
+							map[string]any{"mode": "pass_headers", "value": []any{"X-CPR-User-Id", "X-CPR-Token-Id", "X-CPR-Token-Name"}},
 							map[string]any{"mode": "set_header", "path": "X-CPR-User-Id", "value": "runtime-spoof"},
+							map[string]any{"mode": "set_header", "path": "X-CPR-Token-Name", "value": "runtime-spoof"},
 							map[string]any{"mode": "copy_header", "from": "X-CPR-Token-Id", "to": "X-CPR-Token-Id"},
+							map[string]any{"mode": "copy_header", "from": "X-CPR-Token-Name", "to": "X-CPR-Token-Name"},
 							map[string]any{"mode": "copy_header", "from": "X-User-Authorization", "to": "Authorization"},
 						}}
 						_, err := relaycommon.ApplyParamOverrideWithRelayInfo([]byte(`{"model":"test"}`), info)
@@ -316,6 +324,7 @@ func TestCPRIdentityOnHTTPAndWebSocketWire(t *testing.T) {
 						if enabled {
 							assert.Equal(t, []string{"42"}, headers.Values("X-CPR-User-Id"))
 							assert.Equal(t, []string{"77"}, headers.Values("X-CPR-Token-Id"))
+							assert.Equal(t, []string{"%E5%B7%A5%E4%BD%9C%20Key+1"}, headers.Values("X-CPR-Token-Name"))
 							assert.Equal(t, []string{"Bearer shared-cpr-key"}, headers.Values("Authorization"))
 							assert.Equal(t, "native-session", headers.Get("Session_id"))
 							assert.Equal(t, "native-turn", headers.Get("X-Codex-Turn-State"))
@@ -323,6 +332,7 @@ func TestCPRIdentityOnHTTPAndWebSocketWire(t *testing.T) {
 						} else {
 							assert.Empty(t, headers.Values("X-CPR-User-Id"))
 							assert.Empty(t, headers.Values("X-CPR-Token-Id"))
+							assert.Empty(t, headers.Values("X-CPR-Token-Name"))
 							auth := "Bearer override-key"
 							if override == "placeholder" || override == "operations" {
 								auth = "Bearer private-user-key"
@@ -350,7 +360,15 @@ func TestCPRIdentityRetryTargetsAndRequestIsolation(t *testing.T) {
 		for _, ids := range [][2]int{{1, 11}, {1, 12}, {2, 21}} {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader("{}"))
-			info := &relaycommon.RelayInfo{UserId: ids[0], TokenId: ids[1]}
+			name := "key-" + strconv.Itoa(ids[1])
+			c.Set(string(constant.ContextKeyUserId), ids[0])
+			c.Set(string(constant.ContextKeyTokenId), ids[1])
+			c.Set("token_name", name)
+			info, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAIResponses, &dto.OpenAIResponsesRequest{}, nil)
+			require.NoError(t, err)
+			// Retries retain authenticated metadata captured for this request.
+			c.Set("token_name", "changed-after-authentication")
+			c.Request.Header.Set("X-CPR-Token-Name", "client-spoof")
 			for attempt, enabled := range states {
 				// InitChannelMeta refreshes only channel state on retry in production.
 				c.Set(string(constant.ContextKeyChannelType), constant.ChannelTypeOpenAI)
@@ -366,12 +384,69 @@ func TestCPRIdentityRetryTargetsAndRequestIsolation(t *testing.T) {
 				if enabled {
 					assert.Equal(t, strconv.Itoa(ids[0]), h.Get("X-CPR-User-Id"))
 					assert.Equal(t, strconv.Itoa(ids[1]), h.Get("X-CPR-Token-Id"))
+					assert.Equal(t, name, h.Get("X-CPR-Token-Name"))
 					assert.Equal(t, "Bearer "+key, h.Get("Authorization"))
 				} else {
 					assert.Empty(t, h.Get("X-CPR-User-Id"))
 					assert.Empty(t, h.Get("X-CPR-Token-Id"))
+					assert.Empty(t, h.Values("X-CPR-Token-Name"))
 				}
 			}
+		}
+	}
+}
+
+func TestCPRIdentityTokenNameEncoding(t *testing.T) {
+	service.InitHttpClient()
+	for _, transport := range []string{"http", "websocket"} {
+		for _, tc := range []struct {
+			name, encoded string
+		}{
+			{"work-key", "work-key"},
+			{"中文🔑", "%E4%B8%AD%E6%96%87%F0%9F%94%91"},
+			{" key + 100% ", "%20key%20+%20100%25%20"},
+			{"a\r\nX-Injected: yes", "a%0D%0AX-Injected:%20yes"},
+			{"%E4%B8%AD", "%25E4%25B8%25AD"},
+			{"", ""},
+		} {
+			t.Run(transport+"/"+tc.encoded, func(t *testing.T) {
+				received := make(chan http.Header, 1)
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					received <- r.Header.Clone()
+					if transport == "websocket" {
+						ws, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+						if assert.NoError(t, err) {
+							_ = ws.Close()
+						}
+					}
+				}))
+				defer upstream.Close()
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader("{}"))
+				info := &relaycommon.RelayInfo{UserId: 1, TokenId: 2, TokenName: tc.name,
+					ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, ChannelBaseUrl: upstream.URL, ApiKey: "shared",
+						ChannelSetting: dto.ChannelSettings{CPRIdentityForwardingEnabled: true}}}
+				if transport == "websocket" {
+					conn, err := DoWssRequest(cprHeaderTestAdaptor{}, c, info, nil)
+					require.NoError(t, err)
+					require.NoError(t, conn.Close())
+				} else {
+					resp, err := DoApiRequest(cprHeaderTestAdaptor{}, c, info, strings.NewReader("{}"))
+					require.NoError(t, err)
+					require.NoError(t, resp.Body.Close())
+				}
+				h := <-received
+				assert.Equal(t, tc.encoded, h.Get("X-CPR-Token-Name"))
+				decoded, err := url.PathUnescape(h.Get("X-CPR-Token-Name"))
+				require.NoError(t, err)
+				assert.Equal(t, tc.name, decoded)
+				assert.Empty(t, h.Values("X-Injected"))
+				if tc.name == "" {
+					assert.Empty(t, h.Values("X-CPR-Token-Name"), "empty names must remove forged values")
+				} else {
+					assert.Equal(t, []string{tc.encoded}, h.Values("X-CPR-Token-Name"))
+				}
+			})
 		}
 	}
 }
@@ -397,7 +472,7 @@ func TestCPRIdentityMissingCredentialsAndChannelProbes(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader("{}"))
 			c.Set(string(constant.ContextKeyUserSetting), dto.UserSetting{Language: "en"})
-			info := &relaycommon.RelayInfo{UserId: test.userID, TokenId: test.tokenID, IsChannelTest: test.probe, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: test.channelType, ChannelBaseUrl: upstream.URL, ApiKey: "shared", ChannelSetting: dto.ChannelSettings{CPRIdentityForwardingEnabled: true}}}
+			info := &relaycommon.RelayInfo{UserId: test.userID, TokenId: test.tokenID, TokenName: "must-not-be-forwarded", IsChannelTest: test.probe, ChannelMeta: &relaycommon.ChannelMeta{ChannelType: test.channelType, ChannelBaseUrl: upstream.URL, ApiKey: "shared", ChannelSetting: dto.ChannelSettings{CPRIdentityForwardingEnabled: true}}}
 			resp, err := DoApiRequest(cprHeaderTestAdaptor{}, c, info, strings.NewReader("{}"))
 			if test.probe {
 				require.NoError(t, err)
@@ -405,6 +480,7 @@ func TestCPRIdentityMissingCredentialsAndChannelProbes(t *testing.T) {
 				h := <-received
 				assert.Empty(t, h.Get("X-CPR-User-Id"))
 				assert.Empty(t, h.Get("X-CPR-Token-Id"))
+				assert.Empty(t, h.Values("X-CPR-Token-Name"))
 				assert.Equal(t, "Bearer shared", h.Get("Authorization"))
 			} else {
 				require.Error(t, err)
