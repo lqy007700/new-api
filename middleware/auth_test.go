@@ -5,15 +5,23 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/openai"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
@@ -23,6 +31,85 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestTokenAuthCPRNameAfterCacheRepairAndRename(t *testing.T) {
+	previousDB, previousMain, previousLog := model.DB, common.MainDatabaseType(), common.LogDatabaseType()
+	previousPath, previousMaster := common.SQLitePath, common.IsMasterNode
+	previousSecret := common.SessionSecret
+	common.SQLitePath, common.IsMasterNode = t.TempDir()+"/cpr-name.db", false
+	common.SessionSecret = "cpr-name-auth-test-secret"
+	t.Setenv("SQL_DSN", "")
+	t.Setenv("LOG_SQL_DSN", "")
+	require.NoError(t, model.InitDB())
+	database := model.DB
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		model.DB = previousDB
+		common.SetDatabaseTypes(previousMain, previousLog)
+		common.SQLitePath, common.IsMasterNode = previousPath, previousMaster
+		common.SessionSecret = previousSecret
+		assert.NoError(t, sqlDB.Close())
+	})
+	_, redisClient := useRateLimitMiniRedis(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Token{}))
+	service.InitHttpClient()
+	user := model.User{Username: "cpr-cache-name", AffCode: "cpr-cache-name", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", Quota: 100, AuthVersion: 1}
+	require.NoError(t, model.DB.Create(&user).Error)
+	token := model.Token{UserId: user.Id, Key: "cprtrustedname", Name: "工作 Key+1", Status: common.TokenStatusEnabled,
+		ExpiredTime: -1, RemainQuota: 100, UsedQuota: 70}
+	require.NoError(t, token.Insert())
+	_, err = model.GetTokenByKey(token.Key, false)
+	require.NoError(t, err)
+	cacheKey := "token:" + common.GenerateHMAC(token.Key)
+	require.NoError(t, redisClient.HSet(t.Context(), cacheKey, "Name", "forged-cache-name", "RemainQuota", 30, "UsedQuota", 70).Err())
+
+	received := make(chan http.Header, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Clone()
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(upstream.Close)
+	router := gin.New()
+	router.POST("/v1/chat/completions", TokenAuth(), func(c *gin.Context) {
+		info := relaycommon.GenRelayInfoOpenAI(c, &dto.GeneralOpenAIRequest{Model: "test-model"})
+		info.ChannelMeta = &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, ChannelBaseUrl: upstream.URL,
+			ApiKey: "shared-cpr-key", ChannelSetting: dto.ChannelSettings{CPRIdentityForwardingEnabled: true}}
+		// Authenticated display metadata is frozen for this request, including retries.
+		c.Set("token_name", "changed-after-relay-snapshot")
+		response, requestErr := channel.DoApiRequest(&openai.Adaptor{}, c, info, strings.NewReader(`{}`))
+		require.NoError(t, requestErr)
+		require.NoError(t, response.Body.Close())
+		c.Status(http.StatusNoContent)
+	})
+
+	for _, scenario := range []string{"tampered cache", "renamed token"} {
+		t.Run(scenario, func(t *testing.T) {
+			if scenario == "renamed token" {
+				token.Name = "改名 % Key+2"
+				token.RemainQuota = 30
+				require.NoError(t, token.Update())
+			}
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{}`))
+			request.Header.Set("Authorization", "Bearer sk-"+token.Key)
+			request.Header.Set("X-CPR-Token-Name", "forged-client-name")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			require.Equal(t, http.StatusNoContent, recorder.Code, recorder.Body.String())
+			headers := <-received
+			assert.Equal(t, strconv.Itoa(user.Id), headers.Get("X-CPR-User-Id"))
+			assert.Equal(t, strconv.Itoa(token.Id), headers.Get("X-CPR-Token-Id"))
+			assert.Equal(t, []string{url.PathEscape(token.Name)}, headers.Values("X-CPR-Token-Name"))
+			assert.Equal(t, "Bearer shared-cpr-key", headers.Get("Authorization"))
+			cached, cacheErr := model.GetTokenByKey(token.Key, false)
+			require.NoError(t, cacheErr)
+			assert.Equal(t, token.Name, cached.Name)
+			assert.Equal(t, 30, cached.RemainQuota, "metadata repair must retain the reserved quota")
+			assert.Equal(t, 70, cached.UsedQuota)
+		})
+	}
+}
 
 func setupDashboardAuthMiddlewareTest(t *testing.T) {
 	t.Helper()
@@ -154,6 +241,87 @@ func TestUserAuthNeverFallsBackForRecognizedInvalidInternalJWT(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, response.Code)
 	assert.Contains(t, response.Body.String(), "AUTH_UNAUTHORIZED")
+}
+
+func TestDashboardAuthRejectsRedisRoleTampering(t *testing.T) {
+	for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser} {
+		t.Run(fmt.Sprintf("role_%d", role), func(t *testing.T) {
+			setupDashboardAuthMiddlewareTest(t)
+			gin.SetMode(gin.TestMode)
+			_, redisClient := useRateLimitMiniRedis(t)
+			legacy := "cache-integrity-legacy"
+			user := createMiddlewarePATUser(t, "cache-integrity", legacy)
+			require.NoError(t, model.DB.Model(user).Update("role", role).Error)
+			bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "cache-integrity-test")
+			require.NoError(t, err)
+			pat, _ := createMiddlewareScopedToken(t, user.Id, 0, "profile:read", "user:read")
+
+			router := gin.New()
+			router.GET("/api/perf-metrics", RootAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			router.GET("/api/user/", AdminAuth(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+			showIdentity := func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"id": c.GetInt("id"), "role": c.GetInt("role")})
+			}
+			router.GET("/api/user/self", UserAuth(), showIdentity)
+			router.GET("/api/pricing", TryUserAuth(), showIdentity)
+			rootStatus, adminStatus := http.StatusForbidden, http.StatusForbidden
+			if role == common.RoleRootUser {
+				rootStatus = http.StatusNoContent
+			}
+			if role >= common.RoleAdminUser {
+				adminStatus = http.StatusNoContent
+			}
+			for _, credential := range []struct{ name, raw string }{
+				{name: "login JWT", raw: bundle.AccessToken},
+				{name: "scoped PAT", raw: pat},
+				{name: "legacy token", raw: legacy},
+			} {
+				t.Run(credential.name, func(t *testing.T) {
+					cacheKey := fmt.Sprintf("user:%d", user.Id)
+					require.NoError(t, redisClient.HSet(t.Context(), cacheKey, "Role", role).Err())
+					response := middlewareBearerRequest(router, "/api/perf-metrics", credential.raw)
+					require.Equal(t, rootStatus, response.Code, response.Body.String())
+					response = middlewareBearerRequest(router, "/api/user/", credential.raw)
+					require.Equal(t, adminStatus, response.Code, response.Body.String())
+
+					require.NoError(t, redisClient.HSet(t.Context(), cacheKey, "Role", common.RoleRootUser).Err())
+					response = middlewareBearerRequest(router, "/api/perf-metrics", credential.raw)
+					assert.Equal(t, rootStatus, response.Code, response.Body.String())
+					response = middlewareBearerRequest(router, "/api/user/", credential.raw)
+					assert.Equal(t, adminStatus, response.Code, response.Body.String())
+					for _, path := range []string{"/api/user/self", "/api/pricing"} {
+						response = middlewareBearerRequest(router, path, credential.raw)
+						require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+						var body struct {
+							ID   int `json:"id"`
+							Role int `json:"role"`
+						}
+						require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+						assert.Equal(t, user.Id, body.ID, path)
+						assert.Equal(t, role, body.Role, path)
+					}
+				})
+			}
+			stored, err := model.GetUserById(user.Id, false)
+			require.NoError(t, err)
+			assert.Equal(t, role, stored.Role)
+			if role == common.RoleCommonUser {
+				const callbackName = "test:dashboard-auth-user-read-failure"
+				require.NoError(t, model.DB.Callback().Query().Before("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+					if tx.Statement.Table == "users" {
+						tx.AddError(errors.New("forced user database read failure"))
+					}
+				}))
+				t.Cleanup(func() { model.DB.Callback().Query().Remove(callbackName) })
+				response := middlewareBearerRequest(router, "/api/user/self", bundle.AccessToken)
+				assert.Equal(t, http.StatusOK, response.Code, "a valid cache hit must not query the user table")
+				require.NoError(t, redisClient.HSet(t.Context(), fmt.Sprintf("user:%d", user.Id), "CacheMAC", "tampered", "Role", common.RoleRootUser).Err())
+				response = middlewareBearerRequest(router, "/api/perf-metrics", bundle.AccessToken)
+				assert.Equal(t, http.StatusInternalServerError, response.Code, response.Body.String())
+				assert.Contains(t, response.Body.String(), "AUTH_INTERNAL_ERROR")
+			}
+		})
+	}
 }
 
 func TestTryUserAuthCredentialClassification(t *testing.T) {
