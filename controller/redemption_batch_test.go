@@ -85,6 +85,12 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 				common.SetDatabaseTypes(previousMain, previousLog)
 				common.RedisEnabled = previousRedis
 			})
+			// Initialize the legacy credential deadline explicitly: this fixture
+			// must authenticate even when no earlier test initialized options.
+			require.False(t, db.Migrator().HasTable(&model.Option{}), "use an empty test database")
+			require.NoError(t, db.AutoMigrate(&model.Option{}))
+			t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(&model.Option{})) })
+			require.NoError(t, model.EnsureLegacyAccessTokenRetireAt(common.GetTimestamp()))
 			for _, table := range []any{&model.User{}, &model.Redemption{}} {
 				require.False(t, db.Migrator().HasTable(table), "use an empty test database")
 				require.NoError(t, db.AutoMigrate(table))
